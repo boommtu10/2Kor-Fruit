@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<title>2 กอ ผลไม้ปอกพร้อมทาน</title>
+<meta name="description" content="ระบบบันทึกค่าใช้จ่าย ต้นทุน กำไร และสต๊อกสินค้า ร้าน 2 กอ ผลไม้ปอกพร้อมทาน">
+<meta name="theme-color" content="#2F5233">
+<link rel="manifest" href="./manifest.json">
+<link rel="apple-touch-icon" href="./icons/apple-touch-icon.png">
+<link rel="icon" href="./icons/favicon-32.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="2 กอ ผลไม้ปอก">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Kanit:wght@500;600;700&family=IBM+Plex+Sans+Thai:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="./style.css">
+</head>
+<body>
+
+<!-- ============ LOGIN ============ -->
+<div id="login-screen">
+  <div class="slice-mark login-logo"></div>
+  <h1 class="login-title">2 กอ ผลไม้ปอกพร้อมทาน</h1>
+  <p class="login-sub">เข้าสู่ระบบด้วยรหัสพนักงานและ PIN</p>
+
+  <select id="emp-select" class="emp-select">
+    <option value="">— เลือกพนักงาน —</option>
+  </select>
+
+  <div class="pin-field" id="pin-dots">
+    <span class="pin-dot"></span><span class="pin-dot"></span>
+    <span class="pin-dot"></span><span class="pin-dot"></span>
+  </div>
+  <div class="login-error" id="login-error"></div>
+
+  <div class="keypad" id="keypad">
+    <button class="key" data-k="1">1</button>
+    <button class="key" data-k="2">2</button>
+    <button class="key" data-k="3">3</button>
+    <button class="key" data-k="4">4</button>
+    <button class="key" data-k="5">5</button>
+    <button class="key" data-k="6">6</button>
+    <button class="key" data-k="7">7</button>
+    <button class="key" data-k="8">8</button>
+    <button class="key" data-k="9">9</button>
+    <button class="key wide" data-k="clear">ล้าง</button>
+    <button class="key" data-k="0">0</button>
+    <button class="key wide" data-k="back">⌫</button>
+  </div>
+</div>
+
+<!-- ============ APP ============ -->
+<div id="app" class="hidden">
+  <div class="topbar">
+    <div class="slice-mark"></div>
+    <div class="topbar-title">
+      <div class="shop">2 กอ ผลไม้ปอกพร้อมทาน</div>
+      <div class="emp" id="topbar-emp">—</div>
+    </div>
+    <button class="icon-btn" id="btn-low-stock" title="สินค้าใกล้หมด">
+      🔔<span class="badge hidden" id="low-stock-badge">0</span>
+    </button>
+    <button class="icon-btn" id="btn-logout" title="ออกจากระบบ">⏻</button>
+  </div>
+
+  <main id="main">
+
+    <!-- ---- DASHBOARD ---- -->
+    <section data-view="dashboard">
+      <h2 class="view-title">ภาพรวมวันนี้</h2>
+      <div class="stat-grid">
+        <div class="stat-card"><div class="label">ยอดขายวันนี้</div><div class="value" id="dash-revenue">฿0</div></div>
+        <div class="stat-card mango"><div class="label">กำไรวันนี้ (แม่นยำ)</div><div class="value" id="dash-profit">฿0</div></div>
+        <div class="stat-card danger"><div class="label">มูลค่าของเสีย</div><div class="value" id="dash-waste">฿0</div></div>
+        <div class="stat-card plum"><div class="label">รายการขาย</div><div class="value" id="dash-count">0</div></div>
+      </div>
+
+      <div class="section-label">สินค้าใกล้หมด / หมดสต๊อก</div>
+      <div class="card" id="dash-lowstock-card">
+        <div class="empty-state">กำลังโหลด…</div>
+      </div>
+
+      <div class="section-label">ทางลัด</div>
+      <div class="chip-row">
+        <button class="chip" data-goto="stockin">＋ รับสินค้าเข้า</button>
+        <button class="chip" data-goto="stockout">🧾 บันทึกขาย</button>
+        <button class="chip" data-goto="waste">🗑 ของเสีย</button>
+        <button class="chip" data-goto="costs">💸 ค่าใช้จ่าย</button>
+      </div>
+    </section>
+
+    <!-- ---- PRODUCTS ---- -->
+    <section data-view="products" class="hidden">
+      <h2 class="view-title">สินค้า &amp; สต๊อก</h2>
+      <div class="card" id="products-list"><div class="empty-state">กำลังโหลด…</div></div>
+    </section>
+
+    <!-- ---- STOCK IN ---- -->
+    <section data-view="stockin" class="hidden">
+      <h2 class="view-title">รับสินค้าเข้า</h2>
+      <div class="card">
+        <form id="form-stockin">
+          <div class="field">
+            <label>สินค้า</label>
+            <select id="in-product" required></select>
+          </div>
+          <div class="field-row">
+            <div class="field"><label>จำนวน</label><input type="number" id="in-qty" min="0.01" step="any" required></div>
+            <div class="field"><label>ราคาทุน/หน่วย (บาท)</label><input type="number" id="in-cost" min="0" step="any" required></div>
+          </div>
+          <div class="field"><label>หมายเหตุ (ไม่บังคับ)</label><input type="text" id="in-note" placeholder="เช่น ซื้อจากสวนคุณสมชาย"></div>
+          <button class="btn" type="submit">บันทึกรับเข้า</button>
+        </form>
+      </div>
+    </section>
+
+    <!-- ---- STOCK OUT ---- -->
+    <section data-view="stockout" class="hidden">
+      <h2 class="view-title">บันทึกการขาย</h2>
+      <div class="card">
+        <form id="form-stockout">
+          <div class="field">
+            <label>สินค้า</label>
+            <select id="out-product" required></select>
+            <div class="hint" id="out-stock-hint"></div>
+          </div>
+          <div class="field-row">
+            <div class="field"><label>จำนวน</label><input type="number" id="out-qty" min="0.01" step="any" required></div>
+            <div class="field"><label>ราคาขาย/หน่วย (บาท)</label><input type="number" id="out-price" min="0" step="any" required></div>
+          </div>
+          <div class="field"><label>หมายเหตุ (ไม่บังคับ)</label><input type="text" id="out-note"></div>
+          <button class="btn mango" type="submit">บันทึกการขาย</button>
+        </form>
+      </div>
+    </section>
+
+    <!-- ---- WASTE ---- -->
+    <section data-view="waste" class="hidden">
+      <h2 class="view-title">บันทึกของเสีย / หมดอายุ</h2>
+      <div class="card">
+        <form id="form-waste">
+          <div class="field">
+            <label>สินค้า</label>
+            <select id="waste-product" required></select>
+            <div class="hint" id="waste-stock-hint"></div>
+          </div>
+          <div class="field"><label>จำนวนที่เสีย</label><input type="number" id="waste-qty" min="0.01" step="any" required></div>
+          <div class="field">
+            <label>สาเหตุ</label>
+            <select id="waste-reason">
+              <option value="ผลไม้เสีย/บูด">ผลไม้เสีย/บูด</option>
+              <option value="หมดอายุ">หมดอายุ</option>
+              <option value="ปอกแล้วขายไม่ทัน">ปอกแล้วขายไม่ทัน</option>
+              <option value="ตกหล่น/เสียหายระหว่างทำ">ตกหล่น/เสียหายระหว่างทำ</option>
+              <option value="อื่นๆ">อื่นๆ</option>
+            </select>
+          </div>
+          <button class="btn danger" type="submit">บันทึกของเสีย</button>
+        </form>
+      </div>
+    </section>
+
+    <!-- ---- COSTS ---- -->
+    <section data-view="costs" class="hidden">
+      <h2 class="view-title">ค่าใช้จ่ายอื่น</h2>
+      <div class="card">
+        <form id="form-cost">
+          <div class="field">
+            <label>ประเภท</label>
+            <select id="cost-category">
+              <option>ค่าเช่าที่</option>
+              <option>ค่าแรง/ค่าจ้าง</option>
+              <option>ค่าน้ำแข็ง</option>
+              <option>ค่าน้ำ/ค่าไฟ</option>
+              <option>ค่าเดินทาง/ขนส่ง</option>
+              <option>อื่นๆ</option>
+            </select>
+          </div>
+          <div class="field"><label>รายละเอียด</label><input type="text" id="cost-desc" placeholder="เช่น ค่าเช่าแผงเดือนกรกฎาคม"></div>
+          <div class="field"><label>จำนวนเงิน (บาท)</label><input type="number" id="cost-amount" min="0" step="any" required></div>
+          <button class="btn outline" type="submit">บันทึกค่าใช้จ่าย</button>
+        </form>
+      </div>
+    </section>
+
+    <!-- ---- SUMMARY ---- -->
+    <section data-view="summary" class="hidden">
+      <h2 class="view-title">สรุปยอด</h2>
+      <div class="toggle-group">
+        <button class="active" data-period="day">รายวัน</button>
+        <button data-period="month">รายเดือน</button>
+      </div>
+      <div class="field"><input type="date" id="summary-date"></div>
+
+      <div class="profit-compare">
+        <div class="profit-box simple">
+          <div class="t">กำไรแบบง่าย (ร้านคุ้นเคย)</div>
+          <div class="v" id="sum-simple">฿0</div>
+        </div>
+        <div class="profit-box accurate">
+          <div class="t">กำไรแม่นยำ (หักของเสียแล้ว)</div>
+          <div class="v" id="sum-accurate">฿0</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="list-row"><div class="main title">ยอดรับเข้า (ทุน)</div><div class="trail" id="sum-in">฿0</div></div>
+        <div class="list-row"><div class="main title">ยอดขาย</div><div class="trail pos" id="sum-revenue">฿0</div></div>
+        <div class="list-row"><div class="main title">ต้นทุนสินค้าที่ขายจริง</div><div class="trail" id="sum-cogs">฿0</div></div>
+        <div class="list-row"><div class="main title">มูลค่าของเสีย</div><div class="trail neg" id="sum-waste">฿0</div></div>
+        <div class="list-row"><div class="main title">ค่าใช้จ่ายอื่น</div><div class="trail neg" id="sum-costs">฿0</div></div>
+      </div>
+    </section>
+
+    <!-- ---- EMPLOYEES (admin) ---- -->
+    <section data-view="employees" class="hidden">
+      <h2 class="view-title">พนักงาน</h2>
+      <div class="card" id="employees-list"><div class="empty-state">กำลังโหลด…</div></div>
+      <button class="btn outline" id="btn-add-employee" style="margin-top:10px">＋ เพิ่มพนักงาน</button>
+    </section>
+
+  </main>
+
+  <button class="fab hidden" id="fab-add-product" title="เพิ่มสินค้าใหม่">＋</button>
+
+  <nav class="bottom-nav">
+    <button class="nav-btn active" data-view="dashboard"><span class="ic">🏠</span>หน้าหลัก</button>
+    <button class="nav-btn" data-view="products"><span class="ic">🍈</span>สินค้า</button>
+    <button class="nav-btn" data-view="stockout"><span class="ic">🧾</span>ขาย</button>
+    <button class="nav-btn" data-view="stockin"><span class="ic">📥</span>รับเข้า</button>
+    <button class="nav-btn" data-view="summary"><span class="ic">📊</span>สรุป</button>
+  </nav>
+</div>
+
+<!-- ============ MODALS ============ -->
+<div class="modal-backdrop hidden" id="modal-product">
+  <div class="modal-sheet">
+    <button class="modal-close" data-close-modal="modal-product">✕</button>
+    <h3>เพิ่มสินค้าใหม่</h3>
+    <form id="form-add-product">
+      <div class="field"><label>ชื่อสินค้า</label><input type="text" id="np-name" required></div>
+      <div class="field">
+        <label>หมวดหมู่</label>
+        <select id="np-category">
+          <option value="ผลไม้">ผลไม้</option>
+          <option value="บรรจุภัณฑ์">บรรจุภัณฑ์ (กล่อง/ขวด/ถุง)</option>
+          <option value="อุปกรณ์">อุปกรณ์ (ไม้จิ้ม/สติ๊กเกอร์ ฯลฯ)</option>
+          <option value="อื่นๆ">อื่นๆ</option>
+        </select>
+      </div>
+      <div class="field-row">
+        <div class="field"><label>หน่วยนับ</label><input type="text" id="np-unit" placeholder="กล่อง / ผล / ชิ้น" required></div>
+        <div class="field"><label>สต๊อกขั้นต่ำ</label><input type="number" id="np-minstock" value="5" min="0" required></div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label>ราคาทุนเริ่มต้น</label><input type="number" id="np-cost" min="0" step="any" required></div>
+        <div class="field"><label>ราคาขาย</label><input type="number" id="np-sell" min="0" step="any" required></div>
+      </div>
+      <div class="field"><label>สต๊อกตั้งต้น</label><input type="number" id="np-initstock" value="0" min="0" step="any"></div>
+      <button class="btn" type="submit">บันทึกสินค้า</button>
+    </form>
+  </div>
+</div>
+
+<div class="modal-backdrop hidden" id="modal-employee">
+  <div class="modal-sheet">
+    <button class="modal-close" data-close-modal="modal-employee">✕</button>
+    <h3>เพิ่มพนักงาน</h3>
+    <form id="form-add-employee">
+      <div class="field"><label>ชื่อ</label><input type="text" id="ne-name" required></div>
+      <div class="field"><label>PIN (4 หลัก)</label><input type="text" id="ne-pin" maxlength="4" pattern="\d{4}" required></div>
+      <div class="field">
+        <label>สิทธิ์</label>
+        <select id="ne-role"><option value="staff">พนักงาน (staff)</option><option value="admin">ผู้ดูแลระบบ (admin)</option></select>
+      </div>
+      <button class="btn" type="submit">บันทึกพนักงาน</button>
+    </form>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script src="./config.js"></script>
+<script src="./app.js"></script>
+</body>
+</html>
