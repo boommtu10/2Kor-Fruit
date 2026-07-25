@@ -8,6 +8,8 @@ const state = {
   pin: "",
   products: [],
   employees: [],
+  packaging: [],       // บรรจุภัณฑ์ที่ยัง active ใช้ในหน้าขาย
+  adjustTarget: null,   // สินค้าที่กำลังจะปรับคงเหลือ {id, name, stock, unit}
 };
 
 // ---------------- API helper ----------------
@@ -143,6 +145,7 @@ function goToView(name) {
   document.querySelectorAll(".nav-btn").forEach(b => b.classList.toggle("active", b.dataset.view === name));
   if (name === "dashboard") loadDashboard();
   if (name === "products") renderProductsList();
+  if (name === "stockout") loadPackagingOptions();
   if (name === "summary") loadSummary();
   if (name === "employees") loadEmployeesList();
 }
@@ -170,7 +173,7 @@ async function refreshProducts() {
 
 function fillProductSelects() {
   const actives = state.products.filter(p => p["สถานะ"] !== "inactive");
-  [["in-product"], ["out-product"], ["waste-product"]].forEach(([id]) => {
+  [["in-product"], ["waste-product"]].forEach(([id]) => {
     const sel = document.getElementById(id);
     const cur = sel.value;
     sel.innerHTML = "";
@@ -179,13 +182,12 @@ function fillProductSelects() {
       opt.value = p["รหัสสินค้า"];
       opt.textContent = `${p["ชื่อสินค้า"]} (คงเหลือ ${p["สต๊อกปัจจุบัน"]} ${p["หน่วยนับ"]})`;
       opt.dataset.cost = p["ราคาทุนล่าสุด"];
-      opt.dataset.sell = p["ราคาขาย"];
       opt.dataset.stock = p["สต๊อกปัจจุบัน"];
       sel.appendChild(opt);
     });
     if (cur) sel.value = cur;
   });
-  updateOutHint(); updateWasteHint();
+  updateWasteHint();
 }
 
 function renderProductsList() {
@@ -203,13 +205,46 @@ function renderProductsList() {
       <div class="stock-ring ${low ? "low" : ""}" style="--pct:${pct}"><span>${stock}</span></div>
       <div class="main">
         <div class="title">${p["ชื่อสินค้า"]}</div>
-        <div class="sub">${p["หมวดหมู่"]} · ทุน ${money(p["ราคาทุนล่าสุด"])} / ขาย ${money(p["ราคาขาย"])}</div>
+        <div class="sub">${p["หมวดหมู่"]} · ทุน ${money(p["ราคาทุนล่าสุด"])} / หน่วย</div>
       </div>
-      <div class="trail ${low ? "neg" : ""}">${low ? "ใกล้หมด" : "ปกติ"}</div>
+      <button class="btn outline btn-adjust" data-adjust-id="${p["รหัสสินค้า"]}" data-adjust-name="${p["ชื่อสินค้า"]}" data-adjust-stock="${stock}" style="padding:6px 10px;font-size:12px">ปรับคงเหลือ</button>
     `;
     wrap.appendChild(row);
   });
 }
+
+// ---- ปรับคงเหลือแบบแมนนวล (ใช้บ่อยกับวัตถุดิบที่หักสต๊อกอัตโนมัติไม่ได้) ----
+document.getElementById("products-list").addEventListener("click", (e) => {
+  const btn = e.target.closest("[data-adjust-id]");
+  if (!btn) return;
+  state.adjustTarget = {
+    id: btn.dataset.adjustId,
+    name: btn.dataset.adjustName,
+    stock: btn.dataset.adjustStock,
+  };
+  document.getElementById("adjust-product-name").textContent = state.adjustTarget.name;
+  document.getElementById("adjust-old").value = state.adjustTarget.stock;
+  document.getElementById("adjust-new").value = "";
+  document.getElementById("adjust-note").value = "";
+  openModal("modal-adjust");
+});
+
+document.getElementById("form-adjust").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  if (!state.adjustTarget) return;
+  const res = await apiPost("adjustStock", {
+    productId: state.adjustTarget.id,
+    newStock: document.getElementById("adjust-new").value,
+    note: document.getElementById("adjust-note").value,
+    employee: state.employee.name,
+  });
+  if (res.ok) {
+    const diffTxt = res.diff > 0 ? `เพิ่มขึ้น ${res.diff}` : res.diff < 0 ? `ลดลง ${Math.abs(res.diff)}` : "ไม่เปลี่ยนแปลง";
+    toast("ปรับคงเหลือเรียบร้อย (" + diffTxt + ")");
+    closeModal("modal-adjust");
+    refreshProducts(); refreshLowStock();
+  } else toast(res.error || "ปรับคงเหลือไม่สำเร็จ", true);
+});
 
 async function refreshLowStock() {
   try {
@@ -251,7 +286,6 @@ document.getElementById("form-add-product").addEventListener("submit", async (e)
     unit: document.getElementById("np-unit").value,
     minStock: document.getElementById("np-minstock").value,
     costPrice: document.getElementById("np-cost").value,
-    sellPrice: document.getElementById("np-sell").value,
     initialStock: document.getElementById("np-initstock").value,
   });
   if (res.ok) {
@@ -289,32 +323,71 @@ document.getElementById("in-product").addEventListener("change", (e) => {
 });
 
 // ============================================================
-// STOCK OUT
+// STOCK OUT — พิมพ์ชื่อรายการ + ราคาเอง แล้วเลือกบรรจุภัณฑ์ที่ใช้
 // ============================================================
-function updateOutHint() {
-  const sel = document.getElementById("out-product");
-  const opt = sel.selectedOptions[0];
-  const hint = document.getElementById("out-stock-hint");
-  if (!opt) { hint.textContent = ""; return; }
-  hint.textContent = `คงเหลือในสต๊อก: ${opt.dataset.stock}`;
-  document.getElementById("out-price").value = opt.dataset.sell || "";
+// โหลดรายการบรรจุภัณฑ์ที่ยัง active มาแสดงเป็น checkbox + ช่องจำนวน
+// ให้พนักงานเลือกเองว่าการขายครั้งนี้ใช้อะไรบ้าง (คนละอย่างกับผลไม้ที่ไม่หักสต๊อก)
+async function loadPackagingOptions() {
+  const wrap = document.getElementById("out-packaging-list");
+  try {
+    state.packaging = await apiGet("getPackaging");
+    if (!state.packaging.length) {
+      wrap.innerHTML = '<div class="empty-state">ยังไม่มีบรรจุภัณฑ์ในระบบ (เพิ่มได้ที่หน้า "สินค้า")</div>';
+      return;
+    }
+    wrap.innerHTML = "";
+    state.packaging.forEach(p => {
+      const row = document.createElement("div");
+      row.className = "list-row";
+      row.innerHTML = `
+        <label style="display:flex;align-items:center;gap:8px;flex:1;cursor:pointer">
+          <input type="checkbox" class="pack-check" data-pack-id="${p["รหัสสินค้า"]}">
+          <span>${p["ชื่อสินค้า"]} <span class="hint">(คงเหลือ ${p["สต๊อกปัจจุบัน"]} ${p["หน่วยนับ"]})</span></span>
+        </label>
+        <input type="number" class="pack-qty" data-pack-id="${p["รหัสสินค้า"]}" value="1" min="1" step="1" style="width:64px" disabled>
+      `;
+      wrap.appendChild(row);
+    });
+  } catch (err) {
+    wrap.innerHTML = '<div class="empty-state">โหลดบรรจุภัณฑ์ไม่สำเร็จ</div>';
+  }
 }
-document.getElementById("out-product").addEventListener("change", updateOutHint);
+
+// ติ๊กแล้วเปิดช่องจำนวนให้แก้ไขได้ (ไม่ติ๊ก = ไม่ใช้ ไม่หักสต๊อก)
+document.getElementById("out-packaging-list").addEventListener("change", (e) => {
+  if (!e.target.classList.contains("pack-check")) return;
+  const id = e.target.dataset.packId;
+  const qtyInput = document.querySelector(`.pack-qty[data-pack-id="${id}"]`);
+  qtyInput.disabled = !e.target.checked;
+});
+
+function collectSelectedPackaging() {
+  const selected = [];
+  document.querySelectorAll(".pack-check:checked").forEach(chk => {
+    const id = chk.dataset.packId;
+    const qty = document.querySelector(`.pack-qty[data-pack-id="${id}"]`).value;
+    selected.push({ productId: id, qty: Number(qty) || 1 });
+  });
+  return selected;
+}
 
 document.getElementById("form-stockout").addEventListener("submit", async (e) => {
   e.preventDefault();
-  const productId = document.getElementById("out-product").value;
-  if (!productId) return toast("ยังไม่มีสินค้าให้เลือก", true);
+  const itemName = document.getElementById("out-name").value.trim();
+  if (!itemName) return toast("กรุณาพิมพ์ชื่อรายการขาย", true);
   const res = await apiPost("stockOut", {
-    productId,
+    itemName,
     qty: document.getElementById("out-qty").value,
     sellPrice: document.getElementById("out-price").value,
+    packaging: collectSelectedPackaging(),
     note: document.getElementById("out-note").value,
     employee: state.employee.name,
   });
   if (res.ok) {
-    toast(res.lowStock ? "บันทึกการขายแล้ว — สต๊อกใกล้หมดแล้วนะ" : "บันทึกการขายเรียบร้อย");
+    toast((res.lowStock && res.lowStock.length) ? `บันทึกการขายแล้ว — บรรจุภัณฑ์ใกล้หมด: ${res.lowStock.join(", ")}` : "บันทึกการขายเรียบร้อย");
     e.target.reset();
+    document.getElementById("out-qty").value = 1;
+    loadPackagingOptions();
     refreshProducts(); refreshLowStock();
   } else toast(res.error || "บันทึกไม่สำเร็จ", true);
 });
@@ -370,7 +443,7 @@ async function loadDashboard() {
     const today = new Date().toISOString().slice(0, 10);
     const sum = await apiGet("getSummary", { period: "day", date: today });
     document.getElementById("dash-revenue").textContent = money(sum.totalRevenue);
-    document.getElementById("dash-profit").textContent = money(sum.accurateProfit);
+    document.getElementById("dash-profit").textContent = money(sum.profit);
     document.getElementById("dash-waste").textContent = money(sum.totalWaste);
     document.getElementById("dash-count").textContent = sum.countStockOut ?? 0;
   } catch (err) { toast("โหลดสรุปวันนี้ไม่สำเร็จ", true); }
@@ -395,13 +468,13 @@ async function loadSummary() {
   if (!dateInput.value) dateInput.value = new Date().toISOString().slice(0, 10);
   try {
     const sum = await apiGet("getSummary", { period: currentPeriod, date: dateInput.value });
-    document.getElementById("sum-simple").textContent = money(sum.simpleProfit);
-    document.getElementById("sum-accurate").textContent = money(sum.accurateProfit);
-    document.getElementById("sum-in").textContent = money(sum.totalStockIn);
+    document.getElementById("sum-profit").textContent = money(sum.profit);
     document.getElementById("sum-revenue").textContent = money(sum.totalRevenue);
-    document.getElementById("sum-cogs").textContent = money(sum.totalCOGS);
+    document.getElementById("sum-raw").textContent = money(sum.totalRawMaterialIn);
+    document.getElementById("sum-packcost").textContent = money(sum.totalPackagingCost);
     document.getElementById("sum-waste").textContent = money(sum.totalWaste);
     document.getElementById("sum-costs").textContent = money(sum.totalOtherCosts);
+    document.getElementById("sum-in").textContent = money(sum.totalStockIn);
   } catch (err) { toast("โหลดสรุปยอดไม่สำเร็จ", true); }
 }
 
