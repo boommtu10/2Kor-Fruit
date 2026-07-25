@@ -1,6 +1,6 @@
 // Service worker: แคชเฉพาะ "app shell" (หน้าตาโปรแกรม) ให้เปิดแอปได้แม้เน็ตหลุด
 // ส่วนข้อมูล (เรียก GAS_URL) จะไปที่เครือข่ายเสมอ เพื่อให้เห็นข้อมูลล่าสุด
-const CACHE_NAME = "2kor-shell-v1";
+const CACHE_NAME = "2kor-shell-v2";
 const SHELL_FILES = [
   "./",
   "./index.html",

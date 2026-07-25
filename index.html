@@ -52,187 +52,257 @@
 
 <!-- ============ APP ============ -->
 <div id="app" class="hidden">
-  <div class="topbar">
-    <div class="slice-mark"></div>
-    <div class="topbar-title">
-      <div class="shop">2 กอ ผลไม้ปอกพร้อมทาน</div>
-      <div class="emp" id="topbar-emp">—</div>
+
+  <!-- ---- LEFT SIDEBAR (collapsible) ---- -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-head">
+      <div class="slice-mark sidebar-logo"></div>
+      <span class="sidebar-title">2 กอ ผลไม้ปอก</span>
+      <button class="sidebar-collapse-btn" id="btn-collapse-sidebar" title="ย่อ/ขยายเมนู">‹</button>
     </div>
-    <button class="icon-btn" id="btn-low-stock" title="สินค้าใกล้หมด">
-      🔔<span class="badge hidden" id="low-stock-badge">0</span>
-    </button>
-    <button class="icon-btn" id="btn-logout" title="ออกจากระบบ">⏻</button>
-  </div>
 
-  <main id="main">
+    <nav class="sidebar-nav">
+      <button class="side-item active" data-view="dashboard" title="หน้าหลัก">
+        <span class="ic">🏠</span><span class="lbl">หน้าหลัก</span>
+      </button>
 
-    <!-- ---- DASHBOARD ---- -->
-    <section data-view="dashboard">
-      <h2 class="view-title">ภาพรวมวันนี้</h2>
-      <div class="stat-grid">
-        <div class="stat-card"><div class="label">ยอดขายวันนี้</div><div class="value" id="dash-revenue">฿0</div></div>
-        <div class="stat-card mango"><div class="label">กำไรวันนี้ (แม่นยำ)</div><div class="value" id="dash-profit">฿0</div></div>
-        <div class="stat-card danger"><div class="label">มูลค่าของเสีย</div><div class="value" id="dash-waste">฿0</div></div>
-        <div class="stat-card plum"><div class="label">รายการขาย</div><div class="value" id="dash-count">0</div></div>
-      </div>
-
-      <div class="section-label">สินค้าใกล้หมด / หมดสต๊อก</div>
-      <div class="card" id="dash-lowstock-card">
-        <div class="empty-state">กำลังโหลด…</div>
-      </div>
-
-      <div class="section-label">ทางลัด</div>
-      <div class="chip-row">
-        <button class="chip" data-goto="stockin">＋ รับสินค้าเข้า</button>
-        <button class="chip" data-goto="stockout">🧾 บันทึกขาย</button>
-        <button class="chip" data-goto="waste">🗑 ของเสีย</button>
-        <button class="chip" data-goto="costs">💸 ค่าใช้จ่าย</button>
-      </div>
-    </section>
-
-    <!-- ---- PRODUCTS ---- -->
-    <section data-view="products" class="hidden">
-      <h2 class="view-title">สินค้า &amp; สต๊อก</h2>
-      <div class="card" id="products-list"><div class="empty-state">กำลังโหลด…</div></div>
-    </section>
-
-    <!-- ---- STOCK IN ---- -->
-    <section data-view="stockin" class="hidden">
-      <h2 class="view-title">รับสินค้าเข้า</h2>
-      <div class="card">
-        <form id="form-stockin">
-          <div class="field">
-            <label>สินค้า</label>
-            <select id="in-product" required></select>
-          </div>
-          <div class="field-row">
-            <div class="field"><label>จำนวน</label><input type="number" id="in-qty" min="0.01" step="any" required></div>
-            <div class="field"><label>ราคาทุน/หน่วย (บาท)</label><input type="number" id="in-cost" min="0" step="any" required></div>
-          </div>
-          <div class="field"><label>หมายเหตุ (ไม่บังคับ)</label><input type="text" id="in-note" placeholder="เช่น ซื้อจากสวนคุณสมชาย"></div>
-          <button class="btn" type="submit">บันทึกรับเข้า</button>
-        </form>
-      </div>
-    </section>
-
-    <!-- ---- STOCK OUT ---- -->
-    <section data-view="stockout" class="hidden">
-      <h2 class="view-title">บันทึกการขาย</h2>
-      <div class="card">
-        <form id="form-stockout">
-          <div class="field">
-            <label>ชื่อรายการขาย</label>
-            <input type="text" id="out-name" placeholder="เช่น กล่องผลไม้รวม, ไม้จิ้มผลไม้, น้ำผลไม้ขวด" required>
-          </div>
-          <div class="field-row">
-            <div class="field"><label>จำนวน</label><input type="number" id="out-qty" min="0.01" step="any" value="1" required></div>
-            <div class="field"><label>ราคาขาย/หน่วย (บาท)</label><input type="number" id="out-price" min="0" step="any" required></div>
-          </div>
-
-          <div class="section-label" style="margin-top:14px">บรรจุภัณฑ์ที่ใช้ในรายการนี้</div>
-          <div class="hint">เลือกเฉพาะที่ใช้จริง ระบบจะหักสต๊อกให้อัตโนมัติ (ถ้าไม่ใช้อะไรเลย ไม่ต้องเลือก)</div>
-          <div class="card" id="out-packaging-list" style="margin-top:8px"><div class="empty-state">กำลังโหลด…</div></div>
-
-          <div class="field" style="margin-top:14px"><label>หมายเหตุ (ไม่บังคับ)</label><input type="text" id="out-note"></div>
-          <button class="btn mango" type="submit">บันทึกการขาย</button>
-        </form>
-      </div>
-    </section>
-
-    <!-- ---- WASTE ---- -->
-    <section data-view="waste" class="hidden">
-      <h2 class="view-title">บันทึกของเสีย / หมดอายุ</h2>
-      <div class="card">
-        <form id="form-waste">
-          <div class="field">
-            <label>สินค้า</label>
-            <select id="waste-product" required></select>
-            <div class="hint" id="waste-stock-hint"></div>
-          </div>
-          <div class="field"><label>จำนวนที่เสีย</label><input type="number" id="waste-qty" min="0.01" step="any" required></div>
-          <div class="field">
-            <label>สาเหตุ</label>
-            <select id="waste-reason">
-              <option value="ผลไม้เสีย/บูด">ผลไม้เสีย/บูด</option>
-              <option value="หมดอายุ">หมดอายุ</option>
-              <option value="ปอกแล้วขายไม่ทัน">ปอกแล้วขายไม่ทัน</option>
-              <option value="ตกหล่น/เสียหายระหว่างทำ">ตกหล่น/เสียหายระหว่างทำ</option>
-              <option value="อื่นๆ">อื่นๆ</option>
-            </select>
-          </div>
-          <button class="btn danger" type="submit">บันทึกของเสีย</button>
-        </form>
-      </div>
-    </section>
-
-    <!-- ---- COSTS ---- -->
-    <section data-view="costs" class="hidden">
-      <h2 class="view-title">ค่าใช้จ่ายอื่น</h2>
-      <div class="card">
-        <form id="form-cost">
-          <div class="field">
-            <label>ประเภท</label>
-            <select id="cost-category">
-              <option>ค่าเช่าที่</option>
-              <option>ค่าแรง/ค่าจ้าง</option>
-              <option>ค่าน้ำแข็ง</option>
-              <option>ค่าน้ำ/ค่าไฟ</option>
-              <option>ค่าเดินทาง/ขนส่ง</option>
-              <option>อื่นๆ</option>
-            </select>
-          </div>
-          <div class="field"><label>รายละเอียด</label><input type="text" id="cost-desc" placeholder="เช่น ค่าเช่าแผงเดือนกรกฎาคม"></div>
-          <div class="field"><label>จำนวนเงิน (บาท)</label><input type="number" id="cost-amount" min="0" step="any" required></div>
-          <button class="btn outline" type="submit">บันทึกค่าใช้จ่าย</button>
-        </form>
-      </div>
-    </section>
-
-    <!-- ---- SUMMARY ---- -->
-    <section data-view="summary" class="hidden">
-      <h2 class="view-title">สรุปยอด</h2>
-      <div class="toggle-group">
-        <button class="active" data-period="day">รายวัน</button>
-        <button data-period="month">รายเดือน</button>
-      </div>
-      <div class="field"><input type="date" id="summary-date"></div>
-
-      <div class="profit-compare">
-        <div class="profit-box accurate" style="grid-column:1/-1">
-          <div class="t">กำไรโดยประมาณ</div>
-          <div class="v" id="sum-profit">฿0</div>
+      <div class="side-group" id="group-stock">
+        <button class="side-item side-group-toggle" data-group="stock" title="สต๊อก">
+          <span class="ic">🧺</span><span class="lbl">สต๊อก</span><span class="chev">▾</span>
+        </button>
+        <div class="side-submenu">
+          <button class="side-subitem" data-view="products" title="ดูคงเหลือ">
+            <span class="ic">📋</span><span class="lbl">ดูคงเหลือ</span>
+          </button>
+          <button class="side-subitem" data-action="add-product" title="เพิ่มสินค้า">
+            <span class="ic">🍓</span><span class="lbl">เพิ่มสินค้า</span>
+          </button>
+          <button class="side-subitem" data-view="stockin" title="รับเข้า">
+            <span class="ic">📥</span><span class="lbl">รับเข้า</span>
+          </button>
+          <button class="side-subitem" data-view="stockcut" title="ตัดสต๊อก">
+            <span class="ic">✂️</span><span class="lbl">ตัดสต๊อก</span>
+          </button>
         </div>
       </div>
 
-      <div class="card">
-        <div class="list-row"><div class="main title">ยอดขาย</div><div class="trail pos" id="sum-revenue">฿0</div></div>
-        <div class="list-row"><div class="main title">ยอดซื้อวัตถุดิบ (ช่วงนี้)</div><div class="trail neg" id="sum-raw">฿0</div></div>
-        <div class="list-row"><div class="main title">ต้นทุนบรรจุภัณฑ์ที่ใช้จริง</div><div class="trail neg" id="sum-packcost">฿0</div></div>
-        <div class="list-row"><div class="main title">มูลค่าของเสีย</div><div class="trail neg" id="sum-waste">฿0</div></div>
-        <div class="list-row"><div class="main title">ค่าใช้จ่ายอื่น</div><div class="trail neg" id="sum-costs">฿0</div></div>
-        <div class="list-row"><div class="main title">ยอดซื้อทั้งหมด (รวมบรรจุภัณฑ์)</div><div class="trail" id="sum-in">฿0</div></div>
+      <button class="side-item" data-view="stockout" title="บันทึกขาย">
+        <span class="ic">🧾</span><span class="lbl">บันทึกขาย</span>
+      </button>
+      <button class="side-item" data-view="waste" title="ของเสีย">
+        <span class="ic">🍂</span><span class="lbl">ของเสีย</span>
+      </button>
+      <button class="side-item" data-view="costs" title="ค่าใช้จ่าย">
+        <span class="ic">💰</span><span class="lbl">ค่าใช้จ่าย</span>
+      </button>
+      <button class="side-item" data-view="summary" title="สรุปยอด">
+        <span class="ic">📊</span><span class="lbl">สรุปยอด</span>
+      </button>
+      <button class="side-item hidden" data-view="employees" id="side-employees" title="พนักงาน">
+        <span class="ic">👥</span><span class="lbl">พนักงาน</span>
+      </button>
+    </nav>
+  </aside>
+  <div class="sidebar-backdrop" id="sidebar-backdrop"></div>
+
+  <!-- ---- MAIN CONTENT COLUMN ---- -->
+  <div class="content-col">
+    <div class="topbar">
+      <button class="icon-btn" id="btn-menu-toggle" title="เมนู">☰</button>
+      <div class="slice-mark"></div>
+      <div class="topbar-title">
+        <div class="shop">2 กอ ผลไม้ปอกพร้อมทาน</div>
+        <div class="emp" id="topbar-emp">—</div>
       </div>
-      <div class="hint" style="margin-top:8px">กำไร = ยอดขาย − ยอดซื้อวัตถุดิบ − ต้นทุนบรรจุภัณฑ์ที่ใช้ − ของเสีย − ค่าใช้จ่ายอื่น</div>
-    </section>
+      <button class="icon-btn hidden" id="btn-install" title="ติดตั้งเป็นแอป">⬇️</button>
+      <button class="icon-btn" id="btn-low-stock" title="สินค้าใกล้หมด">
+        🔔<span class="badge hidden" id="low-stock-badge">0</span>
+      </button>
+      <button class="icon-btn" id="btn-logout" title="ออกจากระบบ">⏻</button>
+    </div>
 
-    <!-- ---- EMPLOYEES (admin) ---- -->
-    <section data-view="employees" class="hidden">
-      <h2 class="view-title">พนักงาน</h2>
-      <div class="card" id="employees-list"><div class="empty-state">กำลังโหลด…</div></div>
-      <button class="btn outline" id="btn-add-employee" style="margin-top:10px">＋ เพิ่มพนักงาน</button>
-    </section>
+    <main id="main">
 
-  </main>
+      <!-- ---- DASHBOARD ---- -->
+      <section data-view="dashboard">
+        <h2 class="view-title">ภาพรวมวันนี้</h2>
+        <div class="stat-grid">
+          <div class="stat-card"><div class="label">ยอดขายวันนี้</div><div class="value" id="dash-revenue">฿0</div></div>
+          <div class="stat-card mango"><div class="label">กำไรวันนี้ (แม่นยำ)</div><div class="value" id="dash-profit">฿0</div></div>
+          <div class="stat-card danger"><div class="label">มูลค่าของเสีย</div><div class="value" id="dash-waste">฿0</div></div>
+          <div class="stat-card plum"><div class="label">รายการขาย</div><div class="value" id="dash-count">0</div></div>
+        </div>
 
-  <button class="fab hidden" id="fab-add-product" title="เพิ่มสินค้าใหม่">＋</button>
+        <div class="section-label">สินค้าใกล้หมด / หมดสต๊อก</div>
+        <div class="card" id="dash-lowstock-card">
+          <div class="empty-state">กำลังโหลด…</div>
+        </div>
 
-  <nav class="bottom-nav">
-    <button class="nav-btn active" data-view="dashboard"><span class="ic">🏠</span>หน้าหลัก</button>
-    <button class="nav-btn" data-view="products"><span class="ic">🍈</span>สินค้า</button>
-    <button class="nav-btn" data-view="stockout"><span class="ic">🧾</span>ขาย</button>
-    <button class="nav-btn" data-view="stockin"><span class="ic">📥</span>รับเข้า</button>
-    <button class="nav-btn" data-view="summary"><span class="ic">📊</span>สรุป</button>
-  </nav>
+        <div class="chip-row" style="margin-top:16px">
+          <button class="chip" data-goto="stockin">📥 รับสินค้าเข้า</button>
+          <button class="chip" data-goto="stockout">🧾 บันทึกขาย</button>
+          <button class="chip" data-goto="stockcut">✂️ ตัดสต๊อก</button>
+          <button class="chip" data-goto="waste">🍂 ของเสีย</button>
+          <button class="chip" data-goto="costs">💰 ค่าใช้จ่าย</button>
+        </div>
+      </section>
+
+      <!-- ---- PRODUCTS / ดูคงเหลือ ---- -->
+      <section data-view="products" class="hidden">
+        <h2 class="view-title">สต๊อกคงเหลือ</h2>
+        <div class="card" id="products-list"><div class="empty-state">กำลังโหลด…</div></div>
+      </section>
+
+      <!-- ---- STOCK IN ---- -->
+      <section data-view="stockin" class="hidden">
+        <h2 class="view-title">รับสินค้าเข้า</h2>
+        <div class="card">
+          <form id="form-stockin">
+            <div class="field">
+              <label>สินค้า</label>
+              <select id="in-product" required></select>
+            </div>
+            <div class="field-row">
+              <div class="field"><label>จำนวน</label><input type="number" id="in-qty" min="0.01" step="any" required></div>
+              <div class="field"><label>ราคาทุน/หน่วย (บาท)</label><input type="number" id="in-cost" min="0" step="any" required></div>
+            </div>
+            <div class="field"><label>หมายเหตุ (ไม่บังคับ)</label><input type="text" id="in-note" placeholder="เช่น ซื้อจากสวนคุณสมชาย"></div>
+            <button class="btn" type="submit">บันทึกรับเข้า</button>
+          </form>
+        </div>
+      </section>
+
+      <!-- ---- STOCK CUT (ตัดสต๊อกผลไม้/วัตถุดิบ) ---- -->
+      <section data-view="stockcut" class="hidden">
+        <h2 class="view-title">ตัดสต๊อกผลไม้ / วัตถุดิบ</h2>
+        <div class="hint" style="margin:-6px 0 14px">ใช้เมื่อนำผลไม้ออกไปใช้ปอก/แปรรูป เพื่อให้สต๊อกคงเหลือตรงกับของจริง และคิดต้นทุนได้แม่นยำขึ้นในสรุปยอดรายเดือน</div>
+        <div class="card">
+          <form id="form-stockcut">
+            <div class="field">
+              <label>วัตถุดิบ</label>
+              <select id="cut-product" required></select>
+              <div class="hint" id="cut-stock-hint"></div>
+            </div>
+            <div class="field"><label>จำนวนที่ตัด</label><input type="number" id="cut-qty" min="0.01" step="any" required></div>
+            <div class="field"><label>หมายเหตุ (ไม่บังคับ)</label><input type="text" id="cut-note" placeholder="เช่น นำไปปอกขายวันนี้"></div>
+            <button class="btn mango" type="submit">บันทึกตัดสต๊อก</button>
+          </form>
+        </div>
+      </section>
+
+      <!-- ---- STOCK OUT ---- -->
+      <section data-view="stockout" class="hidden">
+        <h2 class="view-title">บันทึกการขาย</h2>
+        <div class="card">
+          <form id="form-stockout">
+            <div class="field">
+              <label>ชื่อรายการขาย</label>
+              <input type="text" id="out-name" placeholder="เช่น กล่องผลไม้รวม, ไม้จิ้มผลไม้, น้ำผลไม้ขวด" required>
+            </div>
+            <div class="field-row">
+              <div class="field"><label>จำนวน</label><input type="number" id="out-qty" min="0.01" step="any" value="1" required></div>
+              <div class="field"><label>ราคาขาย/หน่วย (บาท)</label><input type="number" id="out-price" min="0" step="any" required></div>
+            </div>
+
+            <div class="section-label" style="margin-top:14px">บรรจุภัณฑ์ที่ใช้ในรายการนี้</div>
+            <div class="hint">เลือกเฉพาะที่ใช้จริง ระบบจะหักสต๊อกให้อัตโนมัติ (ถ้าไม่ใช้อะไรเลย ไม่ต้องเลือก)</div>
+            <div class="card" id="out-packaging-list" style="margin-top:8px"><div class="empty-state">กำลังโหลด…</div></div>
+
+            <div class="field" style="margin-top:14px"><label>หมายเหตุ (ไม่บังคับ)</label><input type="text" id="out-note"></div>
+            <button class="btn mango" type="submit">บันทึกการขาย</button>
+          </form>
+        </div>
+      </section>
+
+      <!-- ---- WASTE ---- -->
+      <section data-view="waste" class="hidden">
+        <h2 class="view-title">บันทึกของเสีย / หมดอายุ</h2>
+        <div class="card">
+          <form id="form-waste">
+            <div class="field">
+              <label>สินค้า</label>
+              <select id="waste-product" required></select>
+              <div class="hint" id="waste-stock-hint"></div>
+            </div>
+            <div class="field"><label>จำนวนที่เสีย</label><input type="number" id="waste-qty" min="0.01" step="any" required></div>
+            <div class="field">
+              <label>สาเหตุ</label>
+              <select id="waste-reason">
+                <option value="ผลไม้เสีย/บูด">ผลไม้เสีย/บูด</option>
+                <option value="หมดอายุ">หมดอายุ</option>
+                <option value="ปอกแล้วขายไม่ทัน">ปอกแล้วขายไม่ทัน</option>
+                <option value="ตกหล่น/เสียหายระหว่างทำ">ตกหล่น/เสียหายระหว่างทำ</option>
+                <option value="อื่นๆ">อื่นๆ</option>
+              </select>
+            </div>
+            <button class="btn danger" type="submit">บันทึกของเสีย</button>
+          </form>
+        </div>
+      </section>
+
+      <!-- ---- COSTS ---- -->
+      <section data-view="costs" class="hidden">
+        <h2 class="view-title">ค่าใช้จ่ายอื่น</h2>
+        <div class="card">
+          <form id="form-cost">
+            <div class="field">
+              <label>ประเภท</label>
+              <select id="cost-category">
+                <option>ค่าเช่าที่</option>
+                <option>ค่าแรง/ค่าจ้าง</option>
+                <option>ค่าน้ำแข็ง</option>
+                <option>ค่าน้ำ/ค่าไฟ</option>
+                <option>ค่าเดินทาง/ขนส่ง</option>
+                <option>อื่นๆ</option>
+              </select>
+            </div>
+            <div class="field"><label>รายละเอียด</label><input type="text" id="cost-desc" placeholder="เช่น ค่าเช่าแผงเดือนกรกฎาคม"></div>
+            <div class="field"><label>จำนวนเงิน (บาท)</label><input type="number" id="cost-amount" min="0" step="any" required></div>
+            <button class="btn outline" type="submit">บันทึกค่าใช้จ่าย</button>
+          </form>
+        </div>
+      </section>
+
+      <!-- ---- SUMMARY ---- -->
+      <section data-view="summary" class="hidden">
+        <h2 class="view-title">สรุปยอด</h2>
+        <div class="toggle-group">
+          <button class="active" data-period="day">รายวัน</button>
+          <button data-period="month">รายเดือน</button>
+        </div>
+        <div class="field"><input type="date" id="summary-date"></div>
+
+        <div class="profit-compare">
+          <div class="profit-box accurate" style="grid-column:1/-1">
+            <div class="t">กำไรโดยประมาณ</div>
+            <div class="v" id="sum-profit">฿0</div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="list-row"><div class="main title">ยอดขาย</div><div class="trail pos" id="sum-revenue">฿0</div></div>
+          <div class="list-row"><div class="main title">ยอดซื้อวัตถุดิบ (ช่วงนี้)</div><div class="trail neg" id="sum-raw">฿0</div></div>
+          <div class="list-row hidden" id="sum-rawcut-row"><div class="main title">ต้นทุนผลไม้ที่ตัดใช้จริง</div><div class="trail neg" id="sum-rawcut">฿0</div></div>
+          <div class="list-row"><div class="main title">ต้นทุนบรรจุภัณฑ์ที่ใช้จริง</div><div class="trail neg" id="sum-packcost">฿0</div></div>
+          <div class="list-row"><div class="main title">มูลค่าของเสีย</div><div class="trail neg" id="sum-waste">฿0</div></div>
+          <div class="list-row"><div class="main title">ค่าใช้จ่ายอื่น</div><div class="trail neg" id="sum-costs">฿0</div></div>
+          <div class="list-row"><div class="main title">ยอดซื้อทั้งหมด (รวมบรรจุภัณฑ์)</div><div class="trail" id="sum-in">฿0</div></div>
+        </div>
+        <div class="hint" style="margin-top:8px" id="sum-formula-hint">กำไร = ยอดขาย − ยอดซื้อวัตถุดิบ − ต้นทุนบรรจุภัณฑ์ที่ใช้ − ของเสีย − ค่าใช้จ่ายอื่น</div>
+      </section>
+
+      <!-- ---- EMPLOYEES (admin) ---- -->
+      <section data-view="employees" class="hidden">
+        <h2 class="view-title">พนักงาน</h2>
+        <div class="card" id="employees-list"><div class="empty-state">กำลังโหลด…</div></div>
+        <button class="btn outline" id="btn-add-employee" style="margin-top:10px">＋ เพิ่มพนักงาน</button>
+      </section>
+
+    </main>
+
+    <button class="fab hidden" id="fab-add-product" title="เพิ่มสินค้าใหม่">＋</button>
+  </div>
+
 </div>
 
 <!-- ============ MODALS ============ -->
@@ -245,7 +315,7 @@
       <div class="field">
         <label>หมวดหมู่</label>
         <select id="np-category">
-          <option value="วัตถุดิบ">วัตถุดิบ (ผลไม้ — ซื้อเข้าเป็น log อย่างเดียว ไม่หักตอนขาย)</option>
+          <option value="วัตถุดิบ">วัตถุดิบ (ผลไม้ — ซื้อเข้าเป็น log, ตัดสต๊อกเองที่เมนู "ตัดสต๊อก")</option>
           <option value="บรรจุภัณฑ์">บรรจุภัณฑ์ (กล่อง/ไม้จิ้ม/ขวด/สติ๊กเกอร์ — หักอัตโนมัติตอนขาย)</option>
           <option value="อื่นๆ">อื่นๆ</option>
         </select>

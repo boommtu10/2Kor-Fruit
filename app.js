@@ -12,6 +12,9 @@ const state = {
   adjustTarget: null,   // สินค้าที่กำลังจะปรับคงเหลือ {id, name, stock, unit}
 };
 
+// รายชื่อ view ที่อยู่ในกลุ่มเมนู "สต๊อก" (ใช้ตอนกางเมนูย่อยอัตโนมัติ)
+const STOCK_GROUP_VIEWS = ["products", "stockin", "stockcut"];
+
 // ---------------- API helper ----------------
 // หมายเหตุ: POST ไม่ตั้ง header Content-Type เอง เพื่อเลี่ยงปัญหา
 // CORS preflight กับ Apps Script (ฝั่ง GAS จะ JSON.parse(e.postData.contents) เอง)
@@ -121,44 +124,96 @@ function enterApp() {
     state.employee.name + (state.employee.role === "admin" ? " · ผู้ดูแลระบบ" : " · พนักงาน");
 
   document.getElementById("fab-add-product").classList.toggle("hidden", state.employee.role !== "admin");
-  setupAdminChip();
+  document.getElementById("side-employees").classList.toggle("hidden", state.employee.role !== "admin");
 
   goToView("dashboard");
   refreshProducts();
   refreshLowStock();
 }
 
-function setupAdminChip() {
-  const row = document.querySelector('.chip-row');
-  if (!row || document.getElementById("chip-employees")) return;
-  if (state.employee.role === "admin") {
-    const chip = document.createElement("button");
-    chip.className = "chip"; chip.id = "chip-employees";
-    chip.dataset.goto = "employees";
-    chip.textContent = "👥 พนักงาน";
-    row.appendChild(chip);
-  }
-}
-
 function goToView(name) {
-  document.querySelectorAll("[data-view]").forEach(s => s.classList.toggle("hidden", s.dataset.view !== name));
-  document.querySelectorAll(".nav-btn").forEach(b => b.classList.toggle("active", b.dataset.view === name));
+  document.querySelectorAll("[data-view]").forEach(s => {
+    if (s.tagName === "SECTION") s.classList.toggle("hidden", s.dataset.view !== name);
+  });
+
+  // sidebar active state (top-level items + submenu items)
+  document.querySelectorAll(".side-item[data-view], .side-subitem[data-view]").forEach(b =>
+    b.classList.toggle("active", b.dataset.view === name)
+  );
+
+  // auto-expand / highlight the "สต๊อก" group when a stock-related view is active
+  const stockGroup = document.getElementById("group-stock");
+  const isStockView = STOCK_GROUP_VIEWS.includes(name);
+  stockGroup.classList.toggle("has-active", isStockView);
+  if (isStockView) stockGroup.classList.add("expanded");
+
+  closeMobileSidebar();
+
   if (name === "dashboard") loadDashboard();
   if (name === "products") renderProductsList();
+  if (name === "stockin") { /* selects already filled via fillProductSelects */ }
+  if (name === "stockcut") { /* selects already filled via fillProductSelects */ }
   if (name === "stockout") loadPackagingOptions();
   if (name === "summary") loadSummary();
   if (name === "employees") loadEmployeesList();
 }
 
-document.querySelectorAll(".nav-btn").forEach(b =>
-  b.addEventListener("click", () => goToView(b.dataset.view))
-);
 document.addEventListener("click", (e) => {
+  const item = e.target.closest(".side-item[data-view], .side-subitem[data-view]");
+  if (item) { goToView(item.dataset.view); return; }
+
+  const groupToggle = e.target.closest(".side-group-toggle");
+  if (groupToggle) {
+    groupToggle.closest(".side-group").classList.toggle("expanded");
+    return;
+  }
+
+  const addProductAction = e.target.closest('[data-action="add-product"]');
+  if (addProductAction) { openModal("modal-product"); closeMobileSidebar(); return; }
+
   const chip = e.target.closest("[data-goto]");
-  if (chip) goToView(chip.dataset.goto);
+  if (chip) { goToView(chip.dataset.goto); return; }
 });
 
 document.getElementById("btn-low-stock").addEventListener("click", () => goToView("dashboard"));
+
+// ============================================================
+// SIDEBAR: collapse (desktop) / drawer (mobile)
+// ============================================================
+const sidebarEl = document.getElementById("sidebar");
+const sidebarBackdrop = document.getElementById("sidebar-backdrop");
+
+function isMobileWidth() { return window.matchMedia("(max-width: 860px)").matches; }
+
+function openMobileSidebar() {
+  sidebarEl.classList.add("mobile-open");
+  sidebarBackdrop.classList.add("show");
+}
+function closeMobileSidebar() {
+  sidebarEl.classList.remove("mobile-open");
+  sidebarBackdrop.classList.remove("show");
+}
+
+document.getElementById("btn-menu-toggle").addEventListener("click", () => {
+  if (isMobileWidth()) {
+    if (sidebarEl.classList.contains("mobile-open")) closeMobileSidebar();
+    else openMobileSidebar();
+  } else {
+    toggleSidebarCollapse();
+  }
+});
+sidebarBackdrop.addEventListener("click", closeMobileSidebar);
+
+function toggleSidebarCollapse() {
+  const collapsed = sidebarEl.classList.toggle("collapsed");
+  localStorage.setItem("2kor_sidebar_collapsed", collapsed ? "1" : "0");
+}
+document.getElementById("btn-collapse-sidebar").addEventListener("click", toggleSidebarCollapse);
+
+// คืนสถานะย่อ/ขยายเมนูจากครั้งก่อน (เฉพาะจอกว้าง)
+if (!isMobileWidth() && localStorage.getItem("2kor_sidebar_collapsed") === "1") {
+  sidebarEl.classList.add("collapsed");
+}
 
 // ============================================================
 // PRODUCTS
@@ -173,11 +228,19 @@ async function refreshProducts() {
 
 function fillProductSelects() {
   const actives = state.products.filter(p => p["สถานะ"] !== "inactive");
-  [["in-product"], ["waste-product"]].forEach(([id]) => {
+  const rawOnly = actives.filter(p => p["หมวดหมู่"] === "วัตถุดิบ");
+
+  [["in-product", actives], ["waste-product", actives], ["cut-product", rawOnly]].forEach(([id, list]) => {
     const sel = document.getElementById(id);
+    if (!sel) return;
     const cur = sel.value;
     sel.innerHTML = "";
-    actives.forEach(p => {
+    if (!list.length) {
+      const opt = document.createElement("option");
+      opt.value = ""; opt.textContent = "— ไม่มีสินค้า —";
+      sel.appendChild(opt);
+    }
+    list.forEach(p => {
       const opt = document.createElement("option");
       opt.value = p["รหัสสินค้า"];
       opt.textContent = `${p["ชื่อสินค้า"]} (คงเหลือ ${p["สต๊อกปัจจุบัน"]} ${p["หน่วยนับ"]})`;
@@ -188,6 +251,7 @@ function fillProductSelects() {
     if (cur) sel.value = cur;
   });
   updateWasteHint();
+  updateCutHint();
 }
 
 function renderProductsList() {
@@ -323,6 +387,34 @@ document.getElementById("in-product").addEventListener("change", (e) => {
 });
 
 // ============================================================
+// STOCK CUT — ตัดสต๊อกผลไม้/วัตถุดิบด้วยมือ (นำไปปอก/แปรรูป/ใช้งาน)
+// ============================================================
+function updateCutHint() {
+  const sel = document.getElementById("cut-product");
+  const opt = sel.selectedOptions[0];
+  const hint = document.getElementById("cut-stock-hint");
+  hint.textContent = (opt && opt.dataset.stock !== undefined) ? `คงเหลือในสต๊อก: ${opt.dataset.stock}` : "";
+}
+document.getElementById("cut-product").addEventListener("change", updateCutHint);
+
+document.getElementById("form-stockcut").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const productId = document.getElementById("cut-product").value;
+  if (!productId) return toast("ยังไม่มีวัตถุดิบให้เลือก กรุณาเพิ่มสินค้าประเภทวัตถุดิบก่อน", true);
+  const res = await apiPost("cutStock", {
+    productId,
+    qty: document.getElementById("cut-qty").value,
+    note: document.getElementById("cut-note").value,
+    employee: state.employee.name,
+  });
+  if (res.ok) {
+    toast("บันทึกตัดสต๊อกเรียบร้อย มูลค่าทุนที่ตัด " + money(res.costValue));
+    e.target.reset();
+    refreshProducts(); refreshLowStock();
+  } else toast(res.error || "บันทึกไม่สำเร็จ", true);
+});
+
+// ============================================================
 // STOCK OUT — พิมพ์ชื่อรายการ + ราคาเอง แล้วเลือกบรรจุภัณฑ์ที่ใช้
 // ============================================================
 // โหลดรายการบรรจุภัณฑ์ที่ยัง active มาแสดงเป็น checkbox + ช่องจำนวน
@@ -332,7 +424,7 @@ async function loadPackagingOptions() {
   try {
     state.packaging = await apiGet("getPackaging");
     if (!state.packaging.length) {
-      wrap.innerHTML = '<div class="empty-state">ยังไม่มีบรรจุภัณฑ์ในระบบ (เพิ่มได้ที่หน้า "สินค้า")</div>';
+      wrap.innerHTML = '<div class="empty-state">ยังไม่มีบรรจุภัณฑ์ในระบบ (เพิ่มได้ที่เมนู "สต๊อก")</div>';
       return;
     }
     wrap.innerHTML = "";
@@ -399,7 +491,7 @@ function updateWasteHint() {
   const sel = document.getElementById("waste-product");
   const opt = sel.selectedOptions[0];
   const hint = document.getElementById("waste-stock-hint");
-  hint.textContent = opt ? `คงเหลือในสต๊อก: ${opt.dataset.stock}` : "";
+  hint.textContent = (opt && opt.dataset.stock !== undefined) ? `คงเหลือในสต๊อก: ${opt.dataset.stock}` : "";
 }
 document.getElementById("waste-product").addEventListener("change", updateWasteHint);
 
@@ -436,7 +528,7 @@ document.getElementById("form-cost").addEventListener("submit", async (e) => {
 });
 
 // ============================================================
-// DASHBOARD (สรุปวันนี้)
+// DASHBOARD (สรุปวันนี้) — สูตรกำไรเดิม ไม่เปลี่ยน
 // ============================================================
 async function loadDashboard() {
   try {
@@ -450,7 +542,8 @@ async function loadDashboard() {
 }
 
 // ============================================================
-// SUMMARY VIEW
+// SUMMARY VIEW (รายวัน / รายเดือน)
+// รายเดือน: เพิ่มการหักต้นทุนผลไม้ที่ตัดสต๊อกจริง (จากเมนู "ตัดสต๊อก")
 // ============================================================
 let currentPeriod = "day";
 document.querySelectorAll(".toggle-group [data-period]").forEach(btn => {
@@ -475,6 +568,13 @@ async function loadSummary() {
     document.getElementById("sum-waste").textContent = money(sum.totalWaste);
     document.getElementById("sum-costs").textContent = money(sum.totalOtherCosts);
     document.getElementById("sum-in").textContent = money(sum.totalStockIn);
+
+    const isMonth = currentPeriod === "month";
+    document.getElementById("sum-rawcut-row").classList.toggle("hidden", !isMonth);
+    document.getElementById("sum-rawcut").textContent = money(sum.totalRawMaterialCut);
+    document.getElementById("sum-formula-hint").textContent = isMonth
+      ? "กำไร = ยอดขาย − ยอดซื้อวัตถุดิบ − ต้นทุนผลไม้ที่ตัดใช้จริง − ต้นทุนบรรจุภัณฑ์ที่ใช้ − ของเสีย − ค่าใช้จ่ายอื่น"
+      : "กำไร = ยอดขาย − ยอดซื้อวัตถุดิบ − ต้นทุนบรรจุภัณฑ์ที่ใช้ − ของเสีย − ค่าใช้จ่ายอื่น";
   } catch (err) { toast("โหลดสรุปยอดไม่สำเร็จ", true); }
 }
 
@@ -515,11 +615,46 @@ document.getElementById("form-add-employee").addEventListener("submit", async (e
 });
 
 // ============================================================
+// ติดตั้งเป็นแอป (PWA install prompt)
+// ============================================================
+let deferredInstallPrompt = null;
+const btnInstall = document.getElementById("btn-install");
+
+function isRunningAsInstalledApp() {
+  return window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true;
+}
+
+window.addEventListener("beforeinstallprompt", (e) => {
+  e.preventDefault();
+  deferredInstallPrompt = e;
+  if (!isRunningAsInstalledApp()) btnInstall.classList.remove("hidden");
+});
+
+btnInstall.addEventListener("click", async () => {
+  if (!deferredInstallPrompt) {
+    toast("เบราว์เซอร์นี้ยังไม่รองรับการติดตั้งอัตโนมัติ ลองเปิดเมนูเบราว์เซอร์แล้วเลือก 'เพิ่มลงหน้าจอโฮม'");
+    return;
+  }
+  deferredInstallPrompt.prompt();
+  const choice = await deferredInstallPrompt.userChoice;
+  if (choice.outcome === "accepted") toast("กำลังติดตั้งแอป…");
+  deferredInstallPrompt = null;
+  btnInstall.classList.add("hidden");
+});
+
+window.addEventListener("appinstalled", () => {
+  btnInstall.classList.add("hidden");
+  toast("ติดตั้งแอปเรียบร้อยแล้ว");
+});
+
+// ============================================================
 // INIT
 // ============================================================
 (function init() {
   renderPinDots();
   loadEmployeesForLogin();
+
+  if (isRunningAsInstalledApp()) btnInstall.classList.add("hidden");
 
   const saved = localStorage.getItem("2kor_employee");
   if (saved) {
