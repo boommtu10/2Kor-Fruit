@@ -269,30 +269,21 @@ function renderProductsList() {
       <div class="stock-ring ${low ? "low" : ""}" style="--pct:${pct}"><span>${stock}</span></div>
       <div class="main">
         <div class="title">${p["ชื่อสินค้า"]}</div>
-        <div class="sub">${p["หมวดหมู่"]} · ทุน ${money(p["ราคาทุนล่าสุด"])} / หน่วย</div>
+        <div class="sub">${p["หมวดหมู่"]}</div>
       </div>
-      <button class="btn outline btn-adjust" data-adjust-id="${p["รหัสสินค้า"]}" data-adjust-name="${p["ชื่อสินค้า"]}" data-adjust-stock="${stock}" style="padding:6px 10px;font-size:12px">ปรับคงเหลือ</button>
+      <div class="stock-trail">
+        <div class="stock-cost">${money(p["ราคาทุนล่าสุด"])}</div>
+        <div class="stock-unit">/ ${p["หน่วยนับ"]}</div>
+      </div>
     `;
     wrap.appendChild(row);
   });
 }
 
-// ---- ปรับคงเหลือแบบแมนนวล (ใช้บ่อยกับวัตถุดิบที่หักสต๊อกอัตโนมัติไม่ได้) ----
-document.getElementById("products-list").addEventListener("click", (e) => {
-  const btn = e.target.closest("[data-adjust-id]");
-  if (!btn) return;
-  state.adjustTarget = {
-    id: btn.dataset.adjustId,
-    name: btn.dataset.adjustName,
-    stock: btn.dataset.adjustStock,
-  };
-  document.getElementById("adjust-product-name").textContent = state.adjustTarget.name;
-  document.getElementById("adjust-old").value = state.adjustTarget.stock;
-  document.getElementById("adjust-new").value = "";
-  document.getElementById("adjust-note").value = "";
-  openModal("modal-adjust");
-});
-
+// ---- ปรับคงเหลือแบบแมนนวล ----
+// หมายเหตุ: เอาปุ่ม "ปรับคงเหลือ" ออกจากหน้ารายการสต๊อกแล้วตามที่ขอ
+// ฟอร์ม/โมดัลด้านล่างนี้ยังเก็บไว้เผื่ออนาคตอยากผูกปุ่มเรียกใช้จากที่อื่น
+// (ถ้าไม่ต้องการฟีเจอร์นี้เลย บอกได้ จะเอา modal-adjust ออกให้ด้วย)
 document.getElementById("form-adjust").addEventListener("submit", async (e) => {
   e.preventDefault();
   if (!state.adjustTarget) return;
