@@ -254,29 +254,77 @@ function fillProductSelects() {
   updateCutHint();
 }
 
-function renderProductsList() {
+// หน้า "สต๊อกคงเหลือ" — ถ้าสินค้าตัวเดียวกันมีของเหลืออยู่หลายราคาทุนพร้อมกัน
+// (ซื้อเข้าคนละรอบคนละราคา) จะแยกแสดงเป็นคนละแถวตามราคา เช่น
+// "แตงโม ฿18/ลูก" กับ "แตงโม ฿22/ลูก" คนละแถว แทนที่จะรวมเป็นแถวเดียว
+async function renderProductsList() {
   const wrap = document.getElementById("products-list");
-  if (!state.products.length) { wrap.innerHTML = '<div class="empty-state">ยังไม่มีสินค้า กด + เพื่อเพิ่มสินค้าแรก</div>'; return; }
+  wrap.innerHTML = '<div class="empty-state">กำลังโหลด…</div>';
+  let list;
+  try {
+    list = await apiGet("getProductsWithLots");
+    if (list.error) throw new Error(list.error);
+  } catch (err) {
+    wrap.innerHTML = '<div class="empty-state">โหลดข้อมูลไม่สำเร็จ</div>';
+    return;
+  }
+  if (!list.length) { wrap.innerHTML = '<div class="empty-state">ยังไม่มีสินค้า กด + เพื่อเพิ่มสินค้าแรก</div>'; return; }
   wrap.innerHTML = "";
-  state.products.forEach(p => {
+  list.forEach(p => {
     const stock = Number(p["สต๊อกปัจจุบัน"]);
     const min = Number(p["สต๊อกขั้นต่ำ"]) || 1;
     const pct = Math.max(0, Math.min(100, Math.round((stock / (min * 2)) * 100)));
     const low = stock <= min;
-    const row = document.createElement("div");
-    row.className = "list-row";
-    row.innerHTML = `
+    const unit = p["หน่วยนับ"];
+    const lots = Array.isArray(p.lots) ? p.lots : [];
+
+    if (lots.length <= 1) {
+      // ราคาทุนเดียว (หรือยังไม่มีล็อต) — แถวเดียวเหมือนเดิม
+      const cost = lots.length ? lots[0].cost : Number(p["ราคาทุนล่าสุด"]);
+      const row = document.createElement("div");
+      row.className = "list-row";
+      row.innerHTML = `
+        <div class="stock-ring ${low ? "low" : ""}" style="--pct:${pct}"><span>${stock}</span></div>
+        <div class="main">
+          <div class="title">${p["ชื่อสินค้า"]}</div>
+          <div class="sub">${p["หมวดหมู่"]}</div>
+        </div>
+        <div class="stock-trail">
+          <div class="stock-cost">${money(cost)}</div>
+          <div class="stock-unit">/ ${unit}</div>
+        </div>
+      `;
+      wrap.appendChild(row);
+      return;
+    }
+
+    // มีหลายราคาทุนพร้อมกัน — แถวหัวโชว์ชื่อ/สต๊อกรวม แล้วแยกแถวย่อยตามราคา
+    const head = document.createElement("div");
+    head.className = "list-row";
+    head.innerHTML = `
       <div class="stock-ring ${low ? "low" : ""}" style="--pct:${pct}"><span>${stock}</span></div>
       <div class="main">
         <div class="title">${p["ชื่อสินค้า"]}</div>
-        <div class="sub">${p["หมวดหมู่"]}</div>
-      </div>
-      <div class="stock-trail">
-        <div class="stock-cost">${money(p["ราคาทุนล่าสุด"])}</div>
-        <div class="stock-unit">/ ${p["หน่วยนับ"]}</div>
+        <div class="sub">${p["หมวดหมู่"]} · มีของเหลือหลายราคาทุน</div>
       </div>
     `;
-    wrap.appendChild(row);
+    wrap.appendChild(head);
+
+    lots.forEach(l => {
+      const sub = document.createElement("div");
+      sub.className = "list-row";
+      sub.style.paddingLeft = "58px";
+      sub.innerHTML = `
+        <div class="main">
+          <div class="title" style="font-size:13px;font-weight:600;color:var(--ink-soft)">ล็อตราคา ${money(l.cost)}/${unit}</div>
+        </div>
+        <div class="stock-trail">
+          <div class="stock-cost">${l.remaining}</div>
+          <div class="stock-unit">${unit}</div>
+        </div>
+      `;
+      wrap.appendChild(sub);
+    });
   });
 }
 
@@ -342,6 +390,7 @@ document.getElementById("form-add-product").addEventListener("submit", async (e)
     minStock: document.getElementById("np-minstock").value,
     costPrice: document.getElementById("np-cost").value,
     initialStock: document.getElementById("np-initstock").value,
+    employee: state.employee.name,
   });
   if (res.ok) {
     toast("เพิ่มสินค้าเรียบร้อย");
