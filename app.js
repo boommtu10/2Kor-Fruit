@@ -243,7 +243,7 @@ function fillProductSelects() {
     list.forEach(p => {
       const opt = document.createElement("option");
       opt.value = p["รหัสสินค้า"];
-      opt.textContent = `${p["ชื่อสินค้า"]} (คงเหลือ ${p["สต๊อกปัจจุบัน"]} ${p["หน่วยนับ"]})`;
+      opt.textContent = `${p["ชื่อสินค้า"]} ${money(p["ราคาทุนล่าสุด"])}/${p["หน่วยนับ"]} (คงเหลือ ${p["สต๊อกปัจจุบัน"]} ${p["หน่วยนับ"]})`;
       opt.dataset.cost = p["ราคาทุนล่าสุด"];
       opt.dataset.stock = p["สต๊อกปัจจุบัน"];
       sel.appendChild(opt);
