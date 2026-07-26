@@ -118,7 +118,9 @@
       <button class="icon-btn" id="btn-low-stock" title="สินค้าใกล้หมด">
         🔔<span class="badge hidden" id="low-stock-badge">0</span>
       </button>
-      <button class="icon-btn" id="btn-logout" title="ออกจากระบบ">⏻</button>
+      <button class="icon-btn" id="btn-logout" title="ออกจากระบบ">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v8"/><path d="M18.4 6.6a9 9 0 1 1-12.77 0"/></svg>
+      </button>
     </div>
 
     <main id="main">
@@ -138,13 +140,6 @@
           <div class="empty-state">กำลังโหลด…</div>
         </div>
 
-        <div class="chip-row" style="margin-top:16px">
-          <button class="chip" data-goto="stockin">📥 รับสินค้าเข้า</button>
-          <button class="chip" data-goto="stockout">🧾 บันทึกขาย</button>
-          <button class="chip" data-goto="stockcut">✂️ ตัดสต๊อก</button>
-          <button class="chip" data-goto="waste">🍂 ของเสีย</button>
-          <button class="chip" data-goto="costs">💰 ค่าใช้จ่าย</button>
-        </div>
       </section>
 
       <!-- ---- PRODUCTS / ดูคงเหลือ ---- -->
