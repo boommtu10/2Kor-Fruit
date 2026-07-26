@@ -61,6 +61,7 @@ button, input, select, textarea{ font-family: inherit; }
   background: var(--rind);
   display:flex; align-items:center; justify-content:center;
   flex-shrink:0;
+  object-fit:cover; /* ใช้เมื่อ slice-mark เป็น <img> โลโก้จริง แทนวงกลมที่วาดด้วย CSS */
 }
 .slice-mark::before{
   content:"";
