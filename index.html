@@ -276,14 +276,18 @@
 
         <div class="card">
           <div class="list-row"><div class="main title">ยอดขาย</div><div class="trail pos" id="sum-revenue">฿0</div></div>
-          <div class="list-row"><div class="main title">ยอดซื้อวัตถุดิบ (ช่วงนี้)</div><div class="trail neg" id="sum-raw">฿0</div></div>
-          <div class="list-row hidden" id="sum-rawcut-row"><div class="main title">ต้นทุนผลไม้ที่ตัดใช้จริง</div><div class="trail neg" id="sum-rawcut">฿0</div></div>
+          <div class="list-row" id="sum-rawcut-row"><div class="main title">ต้นทุนผลไม้ที่ตัดใช้จริง</div><div class="trail neg" id="sum-rawcut">฿0</div></div>
           <div class="list-row"><div class="main title">ต้นทุนบรรจุภัณฑ์ที่ใช้จริง</div><div class="trail neg" id="sum-packcost">฿0</div></div>
           <div class="list-row"><div class="main title">มูลค่าของเสีย</div><div class="trail neg" id="sum-waste">฿0</div></div>
           <div class="list-row"><div class="main title">ค่าใช้จ่ายอื่น</div><div class="trail neg" id="sum-costs">฿0</div></div>
+        </div>
+        <div class="hint" style="margin:8px 2px" id="sum-formula-hint">กำไร = ยอดขาย − ต้นทุนผลไม้ที่ตัดใช้จริง − ต้นทุนบรรจุภัณฑ์ที่ใช้จริง − ของเสีย − ค่าใช้จ่ายอื่น</div>
+
+        <div class="section-label">ข้อมูลอ้างอิงกระแสเงินสด (ไม่นับในสูตรกำไรด้านบน)</div>
+        <div class="card alt">
+          <div class="list-row"><div class="main title">ยอดซื้อวัตถุดิบ (ช่วงนี้)</div><div class="trail" id="sum-raw">฿0</div></div>
           <div class="list-row"><div class="main title">ยอดซื้อทั้งหมด (รวมบรรจุภัณฑ์)</div><div class="trail" id="sum-in">฿0</div></div>
         </div>
-        <div class="hint" style="margin-top:8px" id="sum-formula-hint">กำไร = ยอดขาย − ยอดซื้อวัตถุดิบ − ต้นทุนบรรจุภัณฑ์ที่ใช้ − ของเสีย − ค่าใช้จ่ายอื่น</div>
       </section>
 
       <!-- ---- EMPLOYEES (admin) ---- -->

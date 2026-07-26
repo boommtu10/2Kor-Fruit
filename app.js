@@ -609,12 +609,9 @@ async function loadSummary() {
     document.getElementById("sum-costs").textContent = money(sum.totalOtherCosts);
     document.getElementById("sum-in").textContent = money(sum.totalStockIn);
 
-    const isMonth = currentPeriod === "month";
-    document.getElementById("sum-rawcut-row").classList.toggle("hidden", !isMonth);
     document.getElementById("sum-rawcut").textContent = money(sum.totalRawMaterialCut);
-    document.getElementById("sum-formula-hint").textContent = isMonth
-      ? "กำไร = ยอดขาย − ยอดซื้อวัตถุดิบ − ต้นทุนผลไม้ที่ตัดใช้จริง − ต้นทุนบรรจุภัณฑ์ที่ใช้ − ของเสีย − ค่าใช้จ่ายอื่น"
-      : "กำไร = ยอดขาย − ยอดซื้อวัตถุดิบ − ต้นทุนบรรจุภัณฑ์ที่ใช้ − ของเสีย − ค่าใช้จ่ายอื่น";
+    document.getElementById("sum-formula-hint").textContent =
+      "กำไร = ยอดขาย − ต้นทุนผลไม้ที่ตัดใช้จริง − ต้นทุนบรรจุภัณฑ์ที่ใช้จริง − ของเสีย − ค่าใช้จ่ายอื่น (ยอดซื้อของช่วงนี้เป็นข้อมูลอ้างอิงกระแสเงินสด ไม่ได้ถูกหักซ้ำในการคำนวณกำไร)";
   } catch (err) { toast("โหลดสรุปยอดไม่สำเร็จ", true); }
 }
 
