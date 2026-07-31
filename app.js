@@ -153,7 +153,7 @@ function goToView(name) {
   if (name === "products") renderProductsList();
   if (name === "stockin") { /* selects already filled via fillProductSelects */ }
   if (name === "stockcut") { /* selects already filled via fillProductSelects */ }
-  if (name === "stockout") loadPackagingOptions();
+  if (name === "stockout") { loadPackagingOptions(); loadSaleItemNames(); }
   if (name === "summary") loadSummary();
   if (name === "employees") loadEmployeesList();
 }
@@ -457,6 +457,24 @@ document.getElementById("form-stockcut").addEventListener("submit", async (e) =>
 // ============================================================
 // STOCK OUT — พิมพ์ชื่อรายการ + ราคาเอง แล้วเลือกบรรจุภัณฑ์ที่ใช้
 // ============================================================
+// โหลดชื่อรายการขายที่เคยพิมพ์บันทึกไว้แล้ว มาเติมเป็นตัวเลือกใน <datalist>
+// ที่ผูกกับช่อง "ชื่อรายการขาย" (out-name) — เป็นดรอปดาวที่ยังพิมพ์ชื่อใหม่
+// เองได้ตามปกติ ถ้าพิมพ์ชื่อไม่ตรงกับในลิสต์เลยสักตัว input จะรับค่าที่พิมพ์
+// ไปใช้ตามปกติ ไม่ได้บังคับว่าต้องเลือกจากลิสต์เท่านั้น
+async function loadSaleItemNames() {
+  try {
+    const names = await apiGet("getSaleItemNames");
+    if (names.error) throw new Error(names.error);
+    const list = document.getElementById("out-name-list");
+    list.innerHTML = "";
+    names.forEach(name => {
+      const opt = document.createElement("option");
+      opt.value = name;
+      list.appendChild(opt);
+    });
+  } catch (err) { /* เงียบไว้ — ต่อให้โหลดไม่สำเร็จ ก็ยังพิมพ์ชื่อเองได้ตามปกติ */ }
+}
+
 // โหลดรายการบรรจุภัณฑ์ที่ยัง active มาแสดงเป็น checkbox + ช่องจำนวน
 // ให้พนักงานเลือกเองว่าการขายครั้งนี้ใช้อะไรบ้าง (คนละอย่างกับผลไม้ที่ไม่หักสต๊อก)
 async function loadPackagingOptions() {
@@ -520,6 +538,7 @@ document.getElementById("form-stockout").addEventListener("submit", async (e) =>
     e.target.reset();
     document.getElementById("out-qty").value = 1;
     loadPackagingOptions();
+    loadSaleItemNames();
     refreshProducts(); refreshLowStock();
   } else toast(res.error || "บันทึกไม่สำเร็จ", true);
 });
@@ -612,7 +631,36 @@ async function loadSummary() {
     document.getElementById("sum-rawcut").textContent = money(sum.totalRawMaterialCut);
     document.getElementById("sum-formula-hint").textContent =
       "กำไร = ยอดขาย − ต้นทุนผลไม้ที่ตัดใช้จริง − ต้นทุนบรรจุภัณฑ์ที่ใช้จริง − ของเสีย − ค่าใช้จ่ายอื่น (ยอดซื้อของช่วงนี้เป็นข้อมูลอ้างอิงกระแสเงินสด ไม่ได้ถูกหักซ้ำในการคำนวณกำไร)";
+
+    renderSummaryStockOutList(sum.stockOutList);
   } catch (err) { toast("โหลดสรุปยอดไม่สำเร็จ", true); }
+}
+
+// แสดงรายการขายทีละแถวของช่วงที่เลือก (รายวัน/รายเดือน) ให้ไล่เช็คได้ว่า
+// รายการขายที่เกิดขึ้นจริงบันทึกลงระบบครบหรือยัง — ใหม่สุดอยู่บนสุด
+function renderSummaryStockOutList(list) {
+  const wrap = document.getElementById("sum-stockout-list");
+  if (!list || !list.length) {
+    wrap.innerHTML = '<div class="empty-state">ยังไม่มีรายการขายที่บันทึกไว้ในช่วงนี้</div>';
+    return;
+  }
+  wrap.innerHTML = "";
+  list.forEach(r => {
+    const d = new Date(r.date);
+    const timeLabel = isNaN(d) ? "" : d.toLocaleString("th-TH", {
+      day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit"
+    });
+    const row = document.createElement("div");
+    row.className = "list-row";
+    row.innerHTML = `
+      <div class="main">
+        <div class="title">${r.itemName || "(ไม่ระบุชื่อ)"}</div>
+        <div class="sub">${timeLabel} · จำนวน ${r.qty} × ${money(r.sellPrice)}${r.employee ? " · " + r.employee : ""}</div>
+      </div>
+      <div class="trail pos">${money(r.total)}</div>
+    `;
+    wrap.appendChild(row);
+  });
 }
 
 // ============================================================

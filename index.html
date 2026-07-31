@@ -192,7 +192,9 @@
           <form id="form-stockout">
             <div class="field">
               <label>ชื่อรายการขาย</label>
-              <input type="text" id="out-name" placeholder="เช่น กล่องผลไม้รวม, ไม้จิ้มผลไม้, น้ำผลไม้ขวด" required>
+              <input type="text" id="out-name" list="out-name-list" placeholder="เช่น กล่องผลไม้รวม, ไม้จิ้มผลไม้, น้ำผลไม้ขวด" autocomplete="off" required>
+              <datalist id="out-name-list"></datalist>
+              <div class="hint">เลือกจากรายการเดิมได้เลย หรือพิมพ์ชื่อใหม่ถ้ายังไม่เคยมี</div>
             </div>
             <div class="field-row">
               <div class="field"><label>จำนวน</label><input type="number" id="out-qty" min="0.01" step="any" value="1" required></div>
@@ -282,6 +284,10 @@
           <div class="list-row"><div class="main title">ค่าใช้จ่ายอื่น</div><div class="trail neg" id="sum-costs">฿0</div></div>
         </div>
         <div class="hint" style="margin:8px 2px" id="sum-formula-hint">กำไร = ยอดขาย − ต้นทุนผลไม้ที่ตัดใช้จริง − ต้นทุนบรรจุภัณฑ์ที่ใช้จริง − ของเสีย − ค่าใช้จ่ายอื่น</div>
+
+        <div class="section-label" style="margin-top:18px">รายการขายที่บันทึกไว้ (ช่วงนี้)</div>
+        <div class="hint" style="margin:-6px 0 8px">ไล่เช็คทีละแถวว่ารายการขายที่เกิดขึ้นจริงบันทึกครบหรือยัง</div>
+        <div class="card" id="sum-stockout-list"><div class="empty-state">กำลังโหลด…</div></div>
 
         <div class="section-label">ข้อมูลอ้างอิงกระแสเงินสด (ไม่นับในสูตรกำไรด้านบน)</div>
         <div class="card alt">
