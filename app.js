@@ -31,6 +31,22 @@ async function apiPost(action, payload) {
   return res.json();
 }
 
+// ---------------- กันกดปุ่มบันทึกซ้ำ ----------------
+// ปิดปุ่ม submit ของฟอร์ม + เปลี่ยนข้อความเป็น "กำลังบันทึก..." ระหว่างรอ
+// ผลตอบกลับจาก Google Apps Script (ปกติช้ากว่าเว็บทั่วไป 1-5 วินาที) เพื่อไม่ให้
+// พนักงานเข้าใจผิดว่ากดไม่ติดแล้วกดซ้ำจนข้อมูลถูกบันทึกซ้ำสองรอบ
+// ไม่ว่าจะสำเร็จหรือพัง (error) ปุ่มจะกลับมากดได้ปกติเสมอผ่าน finally
+async function submitWithLock(form, action, payload) {
+  const btn = form.querySelector('button[type="submit"]');
+  const originalText = btn ? btn.textContent : "";
+  if (btn) { btn.disabled = true; btn.textContent = "กำลังบันทึก..."; }
+  try {
+    return await apiPost(action, payload);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = originalText; }
+  }
+}
+
 // ---------------- toast ----------------
 let toastTimer;
 function toast(msg, isError) {
@@ -352,7 +368,7 @@ async function renderProductsList() {
 document.getElementById("form-adjust").addEventListener("submit", async (e) => {
   e.preventDefault();
   if (!state.adjustTarget) return;
-  const res = await apiPost("adjustStock", {
+  const res = await submitWithLock(e.target, "adjustStock", {
     productId: state.adjustTarget.id,
     newStock: document.getElementById("adjust-new").value,
     note: document.getElementById("adjust-note").value,
@@ -400,7 +416,7 @@ document.getElementById("fab-add-product").addEventListener("click", () => openM
 
 document.getElementById("form-add-product").addEventListener("submit", async (e) => {
   e.preventDefault();
-  const res = await apiPost("addProduct", {
+  const res = await submitWithLock(e.target, "addProduct", {
     name: document.getElementById("np-name").value,
     category: document.getElementById("np-category").value,
     unit: document.getElementById("np-unit").value,
@@ -424,7 +440,7 @@ document.getElementById("form-stockin").addEventListener("submit", async (e) => 
   e.preventDefault();
   const productId = document.getElementById("in-product").value;
   if (!productId) return toast("ยังไม่มีสินค้าให้เลือก กรุณาเพิ่มสินค้าก่อน", true);
-  const res = await apiPost("stockIn", {
+  const res = await submitWithLock(e.target, "stockIn", {
     productId,
     qty: document.getElementById("in-qty").value,
     costPrice: document.getElementById("in-cost").value,
@@ -458,7 +474,7 @@ document.getElementById("form-stockcut").addEventListener("submit", async (e) =>
   e.preventDefault();
   const productId = document.getElementById("cut-product").value;
   if (!productId) return toast("ยังไม่มีวัตถุดิบให้เลือก กรุณาเพิ่มสินค้าประเภทวัตถุดิบก่อน", true);
-  const res = await apiPost("cutStock", {
+  const res = await submitWithLock(e.target, "cutStock", {
     productId,
     qty: document.getElementById("cut-qty").value,
     note: document.getElementById("cut-note").value,
@@ -546,7 +562,7 @@ document.getElementById("form-stockout").addEventListener("submit", async (e) =>
   e.preventDefault();
   const itemName = document.getElementById("out-name").value.trim();
   if (!itemName) return toast("กรุณาพิมพ์ชื่อรายการขาย", true);
-  const res = await apiPost("stockOut", {
+  const res = await submitWithLock(e.target, "stockOut", {
     itemName,
     qty: document.getElementById("out-qty").value,
     sellPrice: document.getElementById("out-price").value,
@@ -579,7 +595,7 @@ document.getElementById("form-waste").addEventListener("submit", async (e) => {
   e.preventDefault();
   const productId = document.getElementById("waste-product").value;
   if (!productId) return toast("ยังไม่มีสินค้าให้เลือก", true);
-  const res = await apiPost("addWaste", {
+  const res = await submitWithLock(e.target, "addWaste", {
     productId,
     qty: document.getElementById("waste-qty").value,
     reason: document.getElementById("waste-reason").value,
@@ -597,7 +613,7 @@ document.getElementById("form-waste").addEventListener("submit", async (e) => {
 // ============================================================
 document.getElementById("form-cost").addEventListener("submit", async (e) => {
   e.preventDefault();
-  const res = await apiPost("addOtherCost", {
+  const res = await submitWithLock(e.target, "addOtherCost", {
     category: document.getElementById("cost-category").value,
     description: document.getElementById("cost-desc").value,
     amount: document.getElementById("cost-amount").value,
@@ -707,7 +723,7 @@ async function loadEmployeesList() {
 document.getElementById("btn-add-employee").addEventListener("click", () => openModal("modal-employee"));
 document.getElementById("form-add-employee").addEventListener("submit", async (e) => {
   e.preventDefault();
-  const res = await apiPost("addEmployee", {
+  const res = await submitWithLock(e.target, "addEmployee", {
     name: document.getElementById("ne-name").value,
     pin: document.getElementById("ne-pin").value,
     role: document.getElementById("ne-role").value,
