@@ -226,8 +226,12 @@ async function refreshProducts() {
   } catch (err) { toast("โหลดข้อมูลสินค้าไม่สำเร็จ", true); }
 }
 
+// ดรอปดาวเลือกสินค้าในหน้า "รับเข้า / ของเสีย / ตัดสต๊อก" ทั้งหมด ไม่โชว์
+// ตัวที่สต๊อกคงเหลือ = 0 (เหตุผลเดียวกับหน้า "ดูคงเหลือ" — พอของหมดร้านจะเพิ่ม
+// เป็นสินค้าใหม่แทนของเดิมแทบทุกครั้งเพราะราคาทุนไม่เท่ากัน ไม่ได้กลับมาเติม
+// ของตัวเดิมที่หมดแล้ว จึงไม่จำเป็นต้องมีให้เลือกอีก — ใช้กับบรรจุภัณฑ์ด้วย)
 function fillProductSelects() {
-  const actives = state.products.filter(p => p["สถานะ"] !== "inactive");
+  const actives = state.products.filter(p => p["สถานะ"] !== "inactive" && Number(p["สต๊อกปัจจุบัน"]) > 0);
   const rawOnly = actives.filter(p => p["หมวดหมู่"] === "วัตถุดิบ");
 
   [["in-product", actives], ["waste-product", actives], ["cut-product", rawOnly]].forEach(([id, list]) => {
@@ -237,7 +241,7 @@ function fillProductSelects() {
     sel.innerHTML = "";
     if (!list.length) {
       const opt = document.createElement("option");
-      opt.value = ""; opt.textContent = "— ไม่มีสินค้า —";
+      opt.value = ""; opt.textContent = "— ไม่มีสินค้าที่มีของเหลือ —";
       sel.appendChild(opt);
     }
     list.forEach(p => {
@@ -269,8 +273,21 @@ async function renderProductsList() {
     return;
   }
   if (!list.length) { wrap.innerHTML = '<div class="empty-state">ยังไม่มีสินค้า กด + เพื่อเพิ่มสินค้าแรก</div>'; return; }
+
+  // ซ่อนสินค้าที่สต๊อกคงเหลือ = 0 ออกจากหน้านี้เท่านั้น (ไม่ได้ลบข้อมูลในชีตจริง)
+  // เหตุผล: แต่ละรอบซื้อผลไม้ราคาทุนไม่เท่ากัน พอของหมดร้านจะเพิ่มเป็นสินค้าใหม่
+  // แทนของเดิมอยู่แล้ว ตัวเก่าที่หมดสต๊อกเลยไม่จำเป็นต้องค้างโชว์ในลิสต์นี้อีก
+  // ประวัติการขาย/ตัดสต๊อก/กำไรที่ผ่านมายังคำนวณถูกต้องปกติ เพราะข้อมูลเก่า
+  // ยังอยู่ครบในชีต "ตัดสต๊อก"/"ขายออก"/"ของเสีย" ไม่เกี่ยวกับชีต "สินค้า" นี้
+  const visibleList = list.filter(p => Number(p["สต๊อกปัจจุบัน"]) > 0);
+
+  if (!visibleList.length) {
+    wrap.innerHTML = '<div class="empty-state">ตอนนี้สต๊อกทุกตัวเป็น 0 หมด — กด + เพื่อรับสินค้าล็อตใหม่เข้าได้เลย</div>';
+    return;
+  }
+
   wrap.innerHTML = "";
-  list.forEach(p => {
+  visibleList.forEach(p => {
     const stock = Number(p["สต๊อกปัจจุบัน"]);
     const min = Number(p["สต๊อกขั้นต่ำ"]) || 1;
     const pct = Math.max(0, Math.min(100, Math.round((stock / (min * 2)) * 100)));
@@ -480,9 +497,13 @@ async function loadSaleItemNames() {
 async function loadPackagingOptions() {
   const wrap = document.getElementById("out-packaging-list");
   try {
-    state.packaging = await apiGet("getPackaging");
+    const all = await apiGet("getPackaging");
+    // ไม่โชว์บรรจุภัณฑ์ที่สต๊อกเหลือ 0 ให้เลือกตอนขาย เพราะเลือกไปก็หักสต๊อก
+    // ไม่ได้อยู่ดี (ของไม่พอ) — พอบรรจุภัณฑ์หมดแล้วรับเข้าล็อตใหม่ราคาอาจไม่
+    // เท่าเดิม ระบบจะให้เพิ่มเป็นรายการใหม่แทน จึงไม่ต้องมีตัวเก่าค้างในลิสต์นี้
+    state.packaging = Array.isArray(all) ? all.filter(p => Number(p["สต๊อกปัจจุบัน"]) > 0) : [];
     if (!state.packaging.length) {
-      wrap.innerHTML = '<div class="empty-state">ยังไม่มีบรรจุภัณฑ์ในระบบ (เพิ่มได้ที่เมนู "สต๊อก")</div>';
+      wrap.innerHTML = '<div class="empty-state">ยังไม่มีบรรจุภัณฑ์ที่มีของเหลือ (รับเข้าใหม่ได้ที่เมนู "สต๊อก")</div>';
       return;
     }
     wrap.innerHTML = "";
