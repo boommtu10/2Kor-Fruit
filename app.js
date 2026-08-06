@@ -10,12 +10,7 @@ const state = {
   employees: [],
   packaging: [],       // บรรจุภัณฑ์ที่ยัง active ใช้ในหน้าขาย
   adjustTarget: null,   // สินค้าที่กำลังจะปรับคงเหลือ {id, name, stock, unit}
-  lowStockAll: [],      // สินค้าใกล้หมด/หมดสต๊อกทั้งหมด (โหลดครั้งเดียว แบ่งหน้าในเครื่อง)
-  lowStockPage: 0,       // หน้าปัจจุบันของลิสต์สินค้าใกล้หมด (เริ่มที่ 0)
 };
-
-// จำนวนรายการต่อหน้าของลิสต์ "สินค้าใกล้หมด / หมดสต๊อก" ที่หน้าหลัก
-const LOW_STOCK_PAGE_SIZE = 10;
 
 // รายชื่อ view ที่อยู่ในกลุ่มเมนู "สต๊อก" (ใช้ตอนกางเมนูย่อยอัตโนมัติ)
 const STOCK_GROUP_VIEWS = ["products", "stockin", "stockcut"];
@@ -247,22 +242,30 @@ async function refreshProducts() {
   } catch (err) { toast("โหลดข้อมูลสินค้าไม่สำเร็จ", true); }
 }
 
-// ดรอปดาวเลือกสินค้าในหน้า "รับเข้า / ของเสีย / ตัดสต๊อก" ทั้งหมด ไม่โชว์
-// ตัวที่สต๊อกคงเหลือ = 0 (เหตุผลเดียวกับหน้า "ดูคงเหลือ" — พอของหมดร้านจะเพิ่ม
-// เป็นสินค้าใหม่แทนของเดิมแทบทุกครั้งเพราะราคาทุนไม่เท่ากัน ไม่ได้กลับมาเติม
-// ของตัวเดิมที่หมดแล้ว จึงไม่จำเป็นต้องมีให้เลือกอีก — ใช้กับบรรจุภัณฑ์ด้วย)
+// ดรอปดาวเลือกสินค้าในหน้า "รับเข้า / ของเสีย / ตัดสต๊อก" — แยกเงื่อนไข 2 แบบ
+// เพราะ "สต๊อกคงเหลือ = 0" มีได้ 2 ความหมายที่ต้องจัดการไม่เหมือนกัน:
+//
+//  1) "รับเข้า" ต้องเห็นทั้งของที่มีสต๊อกเหลืออยู่แล้ว (>0) และของที่เพิ่งกด
+//     "+" เพิ่มใหม่ แต่ยังไม่เคยรับเข้าเลยสักครั้ง (ร้านนี้ตั้งใจไม่กรอกสต๊อก
+//     ตั้งต้นตอนเพิ่มสินค้า จะมากรอกจำนวน+ราคาทุนจริงตอน "รับเข้า" ครั้งแรก
+//     แทน เพื่อให้นับเป็นกระแสเงินสดซื้อของวันนั้นถูกต้อง) ใช้ฟิลด์
+//     "เคยรับเข้า" ที่ backend คำนวณมาให้ตรวจว่าเคยรับมาก่อนหรือยัง
+//  2) "ของเสีย" กับ "ตัดสต๊อก" ต้องมีของเหลือจริง (>0) เท่านั้นถึงจะมีอะไรให้
+//     ตัด/ทิ้ง ไม่ว่าจะเป็นของใหม่หรือของเก่าที่หมดแล้วก็ไม่ต้องโชว์เหมือนกัน
 function fillProductSelects() {
-  const actives = state.products.filter(p => p["สถานะ"] !== "inactive" && Number(p["สต๊อกปัจจุบัน"]) > 0);
-  const rawOnly = actives.filter(p => p["หมวดหมู่"] === "วัตถุดิบ");
+  const activeAll = state.products.filter(p => p["สถานะ"] !== "inactive");
+  const inList = activeAll.filter(p => Number(p["สต๊อกปัจจุบัน"]) > 0 || !p["เคยรับเข้า"]);
+  const stockedList = activeAll.filter(p => Number(p["สต๊อกปัจจุบัน"]) > 0);
+  const rawOnly = stockedList.filter(p => p["หมวดหมู่"] === "วัตถุดิบ");
 
-  [["in-product", actives], ["waste-product", actives], ["cut-product", rawOnly]].forEach(([id, list]) => {
+  [["in-product", inList], ["waste-product", stockedList], ["cut-product", rawOnly]].forEach(([id, list]) => {
     const sel = document.getElementById(id);
     if (!sel) return;
     const cur = sel.value;
     sel.innerHTML = "";
     if (!list.length) {
       const opt = document.createElement("option");
-      opt.value = ""; opt.textContent = "— ไม่มีสินค้าที่มีของเหลือ —";
+      opt.value = ""; opt.textContent = "— ไม่มีสินค้าให้เลือก —";
       sel.appendChild(opt);
     }
     list.forEach(p => {
@@ -387,68 +390,28 @@ document.getElementById("form-adjust").addEventListener("submit", async (e) => {
   } else toast(res.error || "ปรับคงเหลือไม่สำเร็จ", true);
 });
 
-// โหลดสินค้าใกล้หมด/หมดสต๊อกทั้งหมดจาก server ครั้งเดียว (ตอนเข้าแอป หรือหลัง
-// บันทึกข้อมูลที่กระทบสต๊อก) เก็บไว้ใน state แล้วเริ่มแสดงที่หน้า 1 เสมอ
 async function refreshLowStock() {
   try {
-    state.lowStockAll = await apiGet("getLowStock");
-    state.lowStockPage = 0;
+    const low = await apiGet("getLowStock");
     const badge = document.getElementById("low-stock-badge");
-    badge.textContent = state.lowStockAll.length;
-    badge.classList.toggle("hidden", state.lowStockAll.length === 0);
-    renderLowStockPage();
+    badge.textContent = low.length;
+    badge.classList.toggle("hidden", low.length === 0);
+
+    const card = document.getElementById("dash-lowstock-card");
+    if (!low.length) { card.innerHTML = '<div class="empty-state">สต๊อกทุกอย่างปกติดี 👍</div>'; return; }
+    card.innerHTML = "";
+    low.forEach(p => {
+      const row = document.createElement("div");
+      row.className = "list-row";
+      row.innerHTML = `
+        <div class="slice-mark danger" style="width:34px;height:34px"></div>
+        <div class="main">
+          <div class="title">${p["ชื่อสินค้า"]}</div>
+          <div class="sub">คงเหลือ ${p["สต๊อกปัจจุบัน"]} ${p["หน่วยนับ"]} (ขั้นต่ำ ${p["สต๊อกขั้นต่ำ"]})</div>
+        </div>`;
+      card.appendChild(row);
+    });
   } catch (err) { /* เงียบไว้ ไม่รบกวนหน้าจอหลัก */ }
-}
-
-// แสดงลิสต์ "สินค้าใกล้หมด/หมดสต๊อก" หน้าละ 10 รายการ ตัดจากข้อมูลที่โหลด
-// มาไว้แล้วใน state.lowStockAll (ไม่ยิง API ซ้ำตอนกดเปลี่ยนหน้า) ฟังก์ชันนี้
-// แก้แค่การ์ดลิสต์นี้การ์ดเดียว ไม่ไปแตะการ์ดตัวเลขภาพรวมด้านบน (ยอดขาย/กำไร/
-// มูลค่าของเสีย/รายการขาย) เพราะข้อมูลชุดนั้นไม่เกี่ยวกับการแบ่งหน้านี้เลย
-function renderLowStockPage() {
-  const card = document.getElementById("dash-lowstock-card");
-  const all = state.lowStockAll || [];
-  if (!all.length) { card.innerHTML = '<div class="empty-state">สต๊อกทุกอย่างปกติดี 👍</div>'; return; }
-
-  const totalPages = Math.ceil(all.length / LOW_STOCK_PAGE_SIZE);
-  if (state.lowStockPage >= totalPages) state.lowStockPage = totalPages - 1;
-  if (state.lowStockPage < 0) state.lowStockPage = 0;
-
-  const start = state.lowStockPage * LOW_STOCK_PAGE_SIZE;
-  const pageItems = all.slice(start, start + LOW_STOCK_PAGE_SIZE);
-
-  card.innerHTML = "";
-  pageItems.forEach(p => {
-    const row = document.createElement("div");
-    row.className = "list-row";
-    row.innerHTML = `
-      <div class="slice-mark danger" style="width:34px;height:34px"></div>
-      <div class="main">
-        <div class="title">${p["ชื่อสินค้า"]}</div>
-        <div class="sub">คงเหลือ ${p["สต๊อกปัจจุบัน"]} ${p["หน่วยนับ"]} (ขั้นต่ำ ${p["สต๊อกขั้นต่ำ"]})</div>
-      </div>`;
-    card.appendChild(row);
-  });
-
-  // แถบเปลี่ยนหน้า โผล่เฉพาะตอนมีมากกว่า 1 หน้า
-  if (totalPages > 1) {
-    const pager = document.createElement("div");
-    pager.className = "list-row";
-    pager.style.justifyContent = "space-between";
-    pager.innerHTML = `
-      <button type="button" class="btn outline" id="lowstock-prev" style="padding:6px 14px;font-size:13px" ${state.lowStockPage === 0 ? "disabled" : ""}>‹ ก่อนหน้า</button>
-      <span class="hint">หน้า ${state.lowStockPage + 1} จาก ${totalPages} (ทั้งหมด ${all.length} รายการ)</span>
-      <button type="button" class="btn outline" id="lowstock-next" style="padding:6px 14px;font-size:13px" ${state.lowStockPage >= totalPages - 1 ? "disabled" : ""}>ถัดไป ›</button>
-    `;
-    card.appendChild(pager);
-    document.getElementById("lowstock-prev").addEventListener("click", () => {
-      state.lowStockPage--;
-      renderLowStockPage();
-    });
-    document.getElementById("lowstock-next").addEventListener("click", () => {
-      state.lowStockPage++;
-      renderLowStockPage();
-    });
-  }
 }
 
 // ---- modal: add product ----
