@@ -9,11 +9,13 @@ const state = {
   products: [],
   employees: [],
   packaging: [],       // บรรจุภัณฑ์ที่ยัง active ใช้ในหน้าขาย
+  codes: [],            // Code บรรจุภัณฑ์ที่ตั้งไว้ล่วงหน้า (ดูหน้าบันทึกการขาย)
   adjustTarget: null,   // สินค้าที่กำลังจะปรับคงเหลือ {id, name, stock, unit}
 };
 
 // รายชื่อ view ที่อยู่ในกลุ่มเมนู "สต๊อก" (ใช้ตอนกางเมนูย่อยอัตโนมัติ)
-const STOCK_GROUP_VIEWS = ["products", "stockin", "stockcut"];
+// หมายเหตุ: เอา "stockin" ออกแล้ว เพราะรวมเข้ากับ "เพิ่มสินค้า" (modal) ไปแล้ว
+const STOCK_GROUP_VIEWS = ["products", "stockcut"];
 
 // ---------------- API helper ----------------
 // หมายเหตุ: POST ไม่ตั้ง header Content-Type เอง เพื่อเลี่ยงปัญหา
@@ -167,9 +169,8 @@ function goToView(name) {
 
   if (name === "dashboard") loadDashboard();
   if (name === "products") renderProductsList();
-  if (name === "stockin") { /* selects already filled via fillProductSelects */ }
   if (name === "stockcut") { /* selects already filled via fillProductSelects */ }
-  if (name === "stockout") { loadPackagingOptions(); loadSaleItemNames(); }
+  if (name === "stockout") { loadPackagingOptions(); loadSaleItemNames(); loadCodes(); }
   if (name === "summary") loadSummary();
   if (name === "employees") loadEmployeesList();
 }
@@ -242,23 +243,16 @@ async function refreshProducts() {
   } catch (err) { toast("โหลดข้อมูลสินค้าไม่สำเร็จ", true); }
 }
 
-// ดรอปดาวเลือกสินค้าในหน้า "รับเข้า / ของเสีย / ตัดสต๊อก" — แยกเงื่อนไข 2 แบบ
-// เพราะ "สต๊อกคงเหลือ = 0" มีได้ 2 ความหมายที่ต้องจัดการไม่เหมือนกัน:
-//
-//  1) "รับเข้า" ต้องเห็นทั้งของที่มีสต๊อกเหลืออยู่แล้ว (>0) และของที่เพิ่งกด
-//     "+" เพิ่มใหม่ แต่ยังไม่เคยรับเข้าเลยสักครั้ง (ร้านนี้ตั้งใจไม่กรอกสต๊อก
-//     ตั้งต้นตอนเพิ่มสินค้า จะมากรอกจำนวน+ราคาทุนจริงตอน "รับเข้า" ครั้งแรก
-//     แทน เพื่อให้นับเป็นกระแสเงินสดซื้อของวันนั้นถูกต้อง) ใช้ฟิลด์
-//     "เคยรับเข้า" ที่ backend คำนวณมาให้ตรวจว่าเคยรับมาก่อนหรือยัง
-//  2) "ของเสีย" กับ "ตัดสต๊อก" ต้องมีของเหลือจริง (>0) เท่านั้นถึงจะมีอะไรให้
-//     ตัด/ทิ้ง ไม่ว่าจะเป็นของใหม่หรือของเก่าที่หมดแล้วก็ไม่ต้องโชว์เหมือนกัน
+// ดรอปดาวเลือกสินค้าในหน้า "ของเสีย / ตัดสต๊อก" — ต้องมีของเหลือจริง (>0)
+// เท่านั้นถึงจะมีอะไรให้ตัด/ทิ้ง ไม่ว่าจะเป็นของใหม่หรือของเก่าที่หมดแล้วก็
+// ไม่ต้องโชว์เหมือนกัน (การรับสินค้าเข้าใหม่ ตอนนี้ทำผ่าน modal "เพิ่มสินค้า"
+// อย่างเดียวแล้ว ไม่มีดรอปดาวเลือกสินค้าเดิมมารับเข้าซ้ำอีกต่อไป)
 function fillProductSelects() {
   const activeAll = state.products.filter(p => p["สถานะ"] !== "inactive");
-  const inList = activeAll.filter(p => Number(p["สต๊อกปัจจุบัน"]) > 0 || !p["เคยรับเข้า"]);
   const stockedList = activeAll.filter(p => Number(p["สต๊อกปัจจุบัน"]) > 0);
   const rawOnly = stockedList.filter(p => p["หมวดหมู่"] === "วัตถุดิบ");
 
-  [["in-product", inList], ["waste-product", stockedList], ["cut-product", rawOnly]].forEach(([id, list]) => {
+  [["waste-product", stockedList], ["cut-product", rawOnly]].forEach(([id, list]) => {
     const sel = document.getElementById(id);
     if (!sel) return;
     const cur = sel.value;
@@ -422,6 +416,18 @@ document.querySelectorAll("[data-close-modal]").forEach(b =>
 );
 document.getElementById("fab-add-product").addEventListener("click", () => openModal("modal-product"));
 
+// อัปเดตช่อง "ราคาทุน/หน่วย" ให้เห็นสดๆ ตอนพิมพ์ ราคา/จำนวน (ราคา ÷ จำนวน)
+// เป็นแค่ตัวเลขให้ดูก่อนบันทึกเท่านั้น ตัวเลขจริงที่ใช้บันทึกคำนวณฝั่ง
+// เซิร์ฟเวอร์อีกที (กันกรณีปัดเศษไม่ตรงกันระหว่างหน้าเว็บกับฐานข้อมูล)
+function updateAddProductCostPreview() {
+  const price = Number(document.getElementById("np-price").value) || 0;
+  const qty = Number(document.getElementById("np-qty").value) || 0;
+  const el = document.getElementById("np-costperunit");
+  el.value = qty > 0 ? money(price / qty) : "—";
+}
+document.getElementById("np-price").addEventListener("input", updateAddProductCostPreview);
+document.getElementById("np-qty").addEventListener("input", updateAddProductCostPreview);
+
 document.getElementById("form-add-product").addEventListener("submit", async (e) => {
   e.preventDefault();
   const res = await submitWithLock(e.target, "addProduct", {
@@ -429,42 +435,17 @@ document.getElementById("form-add-product").addEventListener("submit", async (e)
     category: document.getElementById("np-category").value,
     unit: document.getElementById("np-unit").value,
     minStock: document.getElementById("np-minstock").value,
-    costPrice: document.getElementById("np-cost").value,
-    initialStock: document.getElementById("np-initstock").value,
+    price: document.getElementById("np-price").value,
+    qty: document.getElementById("np-qty").value,
     employee: state.employee.name,
   });
   if (res.ok) {
-    toast("เพิ่มสินค้าเรียบร้อย");
+    toast("เพิ่มสินค้า + รับเข้าเรียบร้อย");
     e.target.reset();
+    document.getElementById("np-costperunit").value = "";
     closeModal("modal-product");
     refreshProducts(); refreshLowStock();
   } else toast(res.error || "เพิ่มสินค้าไม่สำเร็จ", true);
-});
-
-// ============================================================
-// STOCK IN
-// ============================================================
-document.getElementById("form-stockin").addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const productId = document.getElementById("in-product").value;
-  if (!productId) return toast("ยังไม่มีสินค้าให้เลือก กรุณาเพิ่มสินค้าก่อน", true);
-  const res = await submitWithLock(e.target, "stockIn", {
-    productId,
-    qty: document.getElementById("in-qty").value,
-    costPrice: document.getElementById("in-cost").value,
-    note: document.getElementById("in-note").value,
-    employee: state.employee.name,
-  });
-  if (res.ok) {
-    toast("บันทึกรับสินค้าเข้าเรียบร้อย");
-    e.target.reset();
-    refreshProducts(); refreshLowStock();
-  } else toast(res.error || "บันทึกไม่สำเร็จ", true);
-});
-
-document.getElementById("in-product").addEventListener("change", (e) => {
-  const opt = e.target.selectedOptions[0];
-  if (opt) document.getElementById("in-cost").value = opt.dataset.cost || "";
 });
 
 // ============================================================
@@ -516,65 +497,186 @@ async function loadSaleItemNames() {
   } catch (err) { /* เงียบไว้ — ต่อให้โหลดไม่สำเร็จ ก็ยังพิมพ์ชื่อเองได้ตามปกติ */ }
 }
 
-// โหลดรายการบรรจุภัณฑ์ที่ยัง active มาแสดงเป็น checkbox + ช่องจำนวน
-// ให้พนักงานเลือกเองว่าการขายครั้งนี้ใช้อะไรบ้าง (คนละอย่างกับผลไม้ที่ไม่หักสต๊อก)
+// วาด checkbox + ช่องจำนวนของบรรจุภัณฑ์ ใช้ร่วมกัน 2 ที่: รายการที่ใช้จริง
+// ตอนขาย (out-packaging-list) และตอนตั้งค่า Code (code-packaging-list)
+// เก็บชื่อสินค้าไว้ใน data-pack-name ด้วย เพื่อให้ตอนบันทึก Code เอาชื่อไป
+// ฝังใน Code ได้เลย ไม่ต้องย้อนไปหาใน state.products อีกที (เผื่อสินค้านั้น
+// ถูกปิดใช้งาน/เปลี่ยนชื่อไปแล้วในอนาคต Code เก่าจะยังอ่านชื่อเดิมได้)
+function renderPackagingChecklist(containerId, list, emptyMsg) {
+  const wrap = document.getElementById(containerId);
+  if (!list.length) { wrap.innerHTML = `<div class="empty-state">${emptyMsg}</div>`; return; }
+  wrap.innerHTML = "";
+  list.forEach(p => {
+    const row = document.createElement("div");
+    row.className = "list-row";
+    row.innerHTML = `
+      <label style="display:flex;align-items:center;gap:8px;flex:1;cursor:pointer">
+        <input type="checkbox" class="pack-check" data-pack-id="${p["รหัสสินค้า"]}" data-pack-name="${p["ชื่อสินค้า"]}">
+        <span>${p["ชื่อสินค้า"]} <span class="hint">(คงเหลือ ${p["สต๊อกปัจจุบัน"]} ${p["หน่วยนับ"]})</span></span>
+      </label>
+      <input type="number" class="pack-qty" data-pack-id="${p["รหัสสินค้า"]}" value="1" min="1" step="1" style="width:64px" disabled>
+    `;
+    wrap.appendChild(row);
+  });
+}
+
+// ติ๊กแล้วเปิดช่องจำนวนให้แก้ไขได้ (ไม่ติ๊ก = ไม่ใช้ ไม่หักสต๊อก) — ผูก event
+// ไว้กับทั้ง 2 ลิสต์ (ขายจริง + ตั้งค่า Code) ใช้ closest(".list-row") กันชนกัน
+// ถ้าบรรจุภัณฑ์ตัวเดียวกันไปโผล่ทั้ง 2 ลิสต์พร้อมกัน
+["out-packaging-list", "code-packaging-list"].forEach(containerId => {
+  document.getElementById(containerId).addEventListener("change", (e) => {
+    if (!e.target.classList.contains("pack-check")) return;
+    const id = e.target.dataset.packId;
+    const qtyInput = e.target.closest(".list-row").querySelector(`.pack-qty[data-pack-id="${id}"]`);
+    if (qtyInput) qtyInput.disabled = !e.target.checked;
+  });
+});
+
+function collectSelectedPackaging(containerId) {
+  const selected = [];
+  document.querySelectorAll(`#${containerId} .pack-check:checked`).forEach(chk => {
+    const id = chk.dataset.packId;
+    const qty = document.querySelector(`#${containerId} .pack-qty[data-pack-id="${id}"]`).value;
+    selected.push({ productId: id, qty: Number(qty) || 1, name: chk.dataset.packName || "" });
+  });
+  return selected;
+}
+
+// โหลดรายการบรรจุภัณฑ์ที่ยัง active มาแสดงเป็น checkbox + ช่องจำนวน ให้
+// พนักงานเลือกเองว่าการขายครั้งนี้ใช้อะไรบ้าง — ใช้เป็น "ทางเลือกสำรอง" เมื่อ
+// ยังไม่ได้เลือก Code เท่านั้น (ถ้าเลือก Code ไว้แล้ว ระบบหักให้อัตโนมัติ
+// ไม่ต้องมาติ๊กเองซ้ำ ดู updateOutCodeUI ด้านล่าง)
 async function loadPackagingOptions() {
-  const wrap = document.getElementById("out-packaging-list");
   try {
     const all = await apiGet("getPackaging");
     // ไม่โชว์บรรจุภัณฑ์ที่สต๊อกเหลือ 0 ให้เลือกตอนขาย เพราะเลือกไปก็หักสต๊อก
     // ไม่ได้อยู่ดี (ของไม่พอ) — พอบรรจุภัณฑ์หมดแล้วรับเข้าล็อตใหม่ราคาอาจไม่
     // เท่าเดิม ระบบจะให้เพิ่มเป็นรายการใหม่แทน จึงไม่ต้องมีตัวเก่าค้างในลิสต์นี้
     state.packaging = Array.isArray(all) ? all.filter(p => Number(p["สต๊อกปัจจุบัน"]) > 0) : [];
-    if (!state.packaging.length) {
-      wrap.innerHTML = '<div class="empty-state">ยังไม่มีบรรจุภัณฑ์ที่มีของเหลือ (รับเข้าใหม่ได้ที่เมนู "สต๊อก")</div>';
-      return;
-    }
-    wrap.innerHTML = "";
-    state.packaging.forEach(p => {
-      const row = document.createElement("div");
-      row.className = "list-row";
-      row.innerHTML = `
-        <label style="display:flex;align-items:center;gap:8px;flex:1;cursor:pointer">
-          <input type="checkbox" class="pack-check" data-pack-id="${p["รหัสสินค้า"]}">
-          <span>${p["ชื่อสินค้า"]} <span class="hint">(คงเหลือ ${p["สต๊อกปัจจุบัน"]} ${p["หน่วยนับ"]})</span></span>
-        </label>
-        <input type="number" class="pack-qty" data-pack-id="${p["รหัสสินค้า"]}" value="1" min="1" step="1" style="width:64px" disabled>
-      `;
-      wrap.appendChild(row);
-    });
+    renderPackagingChecklist("out-packaging-list", state.packaging, 'ยังไม่มีบรรจุภัณฑ์ที่มีของเหลือ (รับเข้าใหม่ได้ที่เมนู "เพิ่มสินค้า")');
   } catch (err) {
-    wrap.innerHTML = '<div class="empty-state">โหลดบรรจุภัณฑ์ไม่สำเร็จ</div>';
+    document.getElementById("out-packaging-list").innerHTML = '<div class="empty-state">โหลดบรรจุภัณฑ์ไม่สำเร็จ</div>';
   }
 }
 
-// ติ๊กแล้วเปิดช่องจำนวนให้แก้ไขได้ (ไม่ติ๊ก = ไม่ใช้ ไม่หักสต๊อก)
-document.getElementById("out-packaging-list").addEventListener("change", (e) => {
-  if (!e.target.classList.contains("pack-check")) return;
-  const id = e.target.dataset.packId;
-  const qtyInput = document.querySelector(`.pack-qty[data-pack-id="${id}"]`);
-  qtyInput.disabled = !e.target.checked;
+// รายการบรรจุภัณฑ์สำหรับ "ตั้งค่า Code" ไม่กรองเฉพาะที่มีของเหลือ (>0)
+// เพราะ Code คือการตั้ง "สูตร" ไว้ล่วงหน้า ไม่ใช่การหักของจริง ณ ตอนนั้น
+async function loadCodePackagingOptions() {
+  try {
+    const all = await apiGet("getPackaging");
+    renderPackagingChecklist("code-packaging-list", Array.isArray(all) ? all : [], 'ยังไม่มีบรรจุภัณฑ์ในระบบ ไปเพิ่มที่เมนู "เพิ่มสินค้า" ก่อน');
+  } catch (err) {
+    document.getElementById("code-packaging-list").innerHTML = '<div class="empty-state">โหลดบรรจุภัณฑ์ไม่สำเร็จ</div>';
+  }
+}
+
+// ============================================================
+// CODE (ชุดบรรจุภัณฑ์ที่ตั้งไว้ล่วงหน้า)
+// ============================================================
+async function loadCodes() {
+  try {
+    const codes = await apiGet("getCodes");
+    state.codes = Array.isArray(codes) ? codes : [];
+    const sel = document.getElementById("out-code");
+    const cur = sel.value;
+    sel.innerHTML = '<option value="">— ไม่ใช้ Code (เลือกบรรจุภัณฑ์เอง) —</option>';
+    state.codes.forEach(c => {
+      const opt = document.createElement("option");
+      opt.value = c.id;
+      opt.textContent = c.name;
+      sel.appendChild(opt);
+    });
+    if (cur) sel.value = cur;
+    updateOutCodeUI();
+  } catch (err) { /* เงียบไว้ — ยังเลือกบรรจุภัณฑ์เองได้ตามปกติ */ }
+}
+
+// เลือก Code แล้ว: ซ่อนช่องติ๊กบรรจุภัณฑ์เอง (เพราะหักให้อัตโนมัติแล้ว)
+// ไม่เลือก Code (ค่าว่าง): โชว์ช่องติ๊กบรรจุภัณฑ์เองแบบเดิมกลับมาเป็นทางเลือกสำรอง
+function updateOutCodeUI() {
+  const sel = document.getElementById("out-code");
+  const section = document.getElementById("out-packaging-section");
+  const hint = document.getElementById("out-code-hint");
+  const code = state.codes.find(c => c.id === sel.value);
+  if (code) {
+    section.classList.add("hidden");
+    const parts = (code.packaging || []).map(p => `${p.name || p.productId} x${p.qty}`);
+    hint.textContent = parts.length ? `จะหักอัตโนมัติ: ${parts.join(", ")}` : "Code นี้ยังไม่ได้ผูกบรรจุภัณฑ์ไว้";
+  } else {
+    section.classList.remove("hidden");
+    hint.textContent = "";
+  }
+}
+document.getElementById("out-code").addEventListener("change", updateOutCodeUI);
+
+document.getElementById("btn-add-code").addEventListener("click", () => {
+  loadCodePackagingOptions();
+  openModal("modal-code");
 });
 
-function collectSelectedPackaging() {
-  const selected = [];
-  document.querySelectorAll(".pack-check:checked").forEach(chk => {
-    const id = chk.dataset.packId;
-    const qty = document.querySelector(`.pack-qty[data-pack-id="${id}"]`).value;
-    selected.push({ productId: id, qty: Number(qty) || 1 });
+document.getElementById("form-add-code").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const name = document.getElementById("code-name").value.trim();
+  if (!name) return toast("กรุณาตั้งชื่อ Code", true);
+  const packaging = collectSelectedPackaging("code-packaging-list");
+  if (!packaging.length) return toast("กรุณาเลือกบรรจุภัณฑ์อย่างน้อย 1 อย่าง", true);
+  const res = await submitWithLock(e.target, "addCode", {
+    name,
+    packaging,
+    employee: state.employee.name,
   });
-  return selected;
+  if (res.ok) {
+    toast("บันทึก Code เรียบร้อย");
+    e.target.reset();
+    closeModal("modal-code");
+    loadCodes();
+  } else toast(res.error || "บันทึก Code ไม่สำเร็จ", true);
+});
+
+// ============================================================
+// ยอดรวม (คำนวณอัตโนมัติตามช่องทางการจำหน่าย)
+// Line Man หักค่าคอมมิชชั่น 32.10% ออกจากราคาขาย/หน่วยก่อนคูณจำนวน
+// ช่องทางอื่นคิดแบบปกติ จำนวน × ราคาขาย/หน่วย — ปัดทศนิยม 2 ตำแหน่งเสมอ
+// (ตัวเลขที่โชว์ตรงนี้เป็นตัวอย่างให้ดูก่อนบันทึก ยอดจริงคำนวณซ้ำฝั่ง
+// เซิร์ฟเวอร์อีกที กันตัวเลขเพี้ยนถ้ามีคนแก้ค่าในหน้าเว็บก่อนกดส่ง)
+function roundMoney(n) {
+  return Math.round((Number(n) + Number.EPSILON) * 100) / 100;
 }
+function computeSaleTotal(qty, price, channel) {
+  const q = Number(qty) || 0;
+  const p = Number(price) || 0;
+  if (String(channel || "").trim() === "Line Man") return roundMoney(p * (1 - 0.3210) * q);
+  return roundMoney(q * p);
+}
+function updateOutTotalPreview() {
+  const qty = document.getElementById("out-qty").value;
+  const price = document.getElementById("out-price").value;
+  const channel = document.getElementById("out-channel").value;
+  document.getElementById("out-total").value = money(computeSaleTotal(qty, price, channel));
+}
+["out-qty", "out-price", "out-channel"].forEach(id => {
+  document.getElementById(id).addEventListener("input", updateOutTotalPreview);
+});
 
 document.getElementById("form-stockout").addEventListener("submit", async (e) => {
   e.preventDefault();
   const itemName = document.getElementById("out-name").value.trim();
   if (!itemName) return toast("กรุณาพิมพ์ชื่อรายการขาย", true);
+
+  const selectedCode = state.codes.find(c => c.id === document.getElementById("out-code").value);
+  // มี Code -> ใช้บรรจุภัณฑ์ที่ผูกไว้กับ Code นั้นอัตโนมัติ ไม่ต้องติ๊กเอง
+  // ไม่มี Code -> กลับไปใช้ช่องติ๊กเองแบบเดิม (ทางเลือกสำรอง)
+  const packaging = selectedCode
+    ? selectedCode.packaging.map(p => ({ productId: p.productId, qty: p.qty }))
+    : collectSelectedPackaging("out-packaging-list");
+
   const res = await submitWithLock(e.target, "stockOut", {
     itemName,
+    code: selectedCode ? selectedCode.name : "",
+    channel: document.getElementById("out-channel").value.trim(),
     qty: document.getElementById("out-qty").value,
     sellPrice: document.getElementById("out-price").value,
-    packaging: collectSelectedPackaging(),
+    packaging,
     note: document.getElementById("out-note").value,
     employee: state.employee.name,
   });
@@ -582,6 +684,8 @@ document.getElementById("form-stockout").addEventListener("submit", async (e) =>
     toast((res.lowStock && res.lowStock.length) ? `บันทึกการขายแล้ว — บรรจุภัณฑ์ใกล้หมด: ${res.lowStock.join(", ")}` : "บันทึกการขายเรียบร้อย");
     e.target.reset();
     document.getElementById("out-qty").value = 1;
+    document.getElementById("out-total").value = "";
+    updateOutCodeUI();
     loadPackagingOptions();
     loadSaleItemNames();
     refreshProducts(); refreshLowStock();
@@ -700,7 +804,7 @@ function renderSummaryStockOutList(list) {
     row.innerHTML = `
       <div class="main">
         <div class="title">${r.itemName || "(ไม่ระบุชื่อ)"}</div>
-        <div class="sub">${timeLabel} · จำนวน ${r.qty} × ${money(r.sellPrice)}${r.employee ? " · " + r.employee : ""}</div>
+        <div class="sub">${timeLabel} · จำนวน ${r.qty} × ${money(r.sellPrice)}${r.channel ? " · " + r.channel : ""}${r.employee ? " · " + r.employee : ""}</div>
       </div>
       <div class="trail pos">${money(r.total)}</div>
     `;

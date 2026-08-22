@@ -77,9 +77,6 @@
           <button class="side-subitem" data-action="add-product" title="เพิ่มสินค้า">
             <span class="ic">🍓</span><span class="lbl">เพิ่มสินค้า</span>
           </button>
-          <button class="side-subitem" data-view="stockin" title="รับเข้า">
-            <span class="ic">📥</span><span class="lbl">รับเข้า</span>
-          </button>
           <button class="side-subitem" data-view="stockcut" title="ตัดสต๊อก">
             <span class="ic">✂️</span><span class="lbl">ตัดสต๊อก</span>
           </button>
@@ -148,25 +145,6 @@
         <div class="card" id="products-list"><div class="empty-state">กำลังโหลด…</div></div>
       </section>
 
-      <!-- ---- STOCK IN ---- -->
-      <section data-view="stockin" class="hidden">
-        <h2 class="view-title">รับสินค้าเข้า</h2>
-        <div class="card">
-          <form id="form-stockin">
-            <div class="field">
-              <label>สินค้า</label>
-              <select id="in-product" required></select>
-            </div>
-            <div class="field-row">
-              <div class="field"><label>จำนวน</label><input type="number" id="in-qty" min="0.01" step="any" required></div>
-              <div class="field"><label>ราคาทุน/หน่วย (บาท)</label><input type="number" id="in-cost" min="0" step="any" required></div>
-            </div>
-            <div class="field"><label>หมายเหตุ (ไม่บังคับ)</label><input type="text" id="in-note" placeholder="เช่น ซื้อจากสวนคุณสมชาย"></div>
-            <button class="btn" type="submit">บันทึกรับเข้า</button>
-          </form>
-        </div>
-      </section>
-
       <!-- ---- STOCK CUT (ตัดสต๊อกผลไม้/วัตถุดิบ) ---- -->
       <section data-view="stockcut" class="hidden">
         <h2 class="view-title">ตัดสต๊อกผลไม้ / วัตถุดิบ</h2>
@@ -188,22 +166,50 @@
       <!-- ---- STOCK OUT ---- -->
       <section data-view="stockout" class="hidden">
         <h2 class="view-title">บันทึกการขาย</h2>
+
+        <div class="section-label">จัดการ Code บรรจุภัณฑ์</div>
+        <div class="hint" style="margin-top:-4px">Code คือชุดบรรจุภัณฑ์ที่ตั้งไว้ล่วงหน้า พอเลือก Code ตอนบันทึกขาย ระบบจะหักสต๊อกบรรจุภัณฑ์ตามที่ผูกไว้ให้อัตโนมัติ ไม่ต้องติ๊กเลือกเองทุกครั้ง</div>
+        <button class="btn outline" type="button" id="btn-add-code" style="margin:8px 0 16px">＋ เพิ่ม Code</button>
+
         <div class="card">
           <form id="form-stockout">
+            <div class="field">
+              <label>Code</label>
+              <select id="out-code">
+                <option value="">— ไม่ใช้ Code (เลือกบรรจุภัณฑ์เอง) —</option>
+              </select>
+              <div class="hint" id="out-code-hint"></div>
+            </div>
+
             <div class="field">
               <label>ชื่อรายการขาย</label>
               <input type="text" id="out-name" list="out-name-list" placeholder="เช่น กล่องผลไม้รวม, ไม้จิ้มผลไม้, น้ำผลไม้ขวด" autocomplete="off" required>
               <datalist id="out-name-list"></datalist>
               <div class="hint">เลือกจากรายการเดิมได้เลย หรือพิมพ์ชื่อใหม่ถ้ายังไม่เคยมี</div>
             </div>
+
+            <div class="field">
+              <label>ช่องทางการจำหน่าย</label>
+              <input type="text" id="out-channel" list="out-channel-list" placeholder="เช่น หน้าบ้าน" autocomplete="off">
+              <datalist id="out-channel-list">
+                <option value="หน้าบ้าน"></option>
+                <option value="จ๊ะนวล"></option>
+                <option value="Line Man"></option>
+              </datalist>
+              <div class="hint">เลือกจากที่มีได้เลย หรือพิมพ์ช่องทางใหม่ก็ได้ — ถ้าเลือก "Line Man" ยอดรวมจะหักค่าคอมมิชชั่น 32.10% ให้อัตโนมัติ</div>
+            </div>
+
             <div class="field-row">
               <div class="field"><label>จำนวน</label><input type="number" id="out-qty" min="0.01" step="any" value="1" required></div>
               <div class="field"><label>ราคาขาย/หน่วย (บาท)</label><input type="number" id="out-price" min="0" step="any" required></div>
             </div>
+            <div class="field"><label>ยอดรวม (คำนวณอัตโนมัติ)</label><input type="text" id="out-total" disabled></div>
 
-            <div class="section-label" style="margin-top:14px">บรรจุภัณฑ์ที่ใช้ในรายการนี้</div>
-            <div class="hint">เลือกเฉพาะที่ใช้จริง ระบบจะหักสต๊อกให้อัตโนมัติ (ถ้าไม่ใช้อะไรเลย ไม่ต้องเลือก)</div>
-            <div class="card" id="out-packaging-list" style="margin-top:8px"><div class="empty-state">กำลังโหลด…</div></div>
+            <div id="out-packaging-section">
+              <div class="section-label" style="margin-top:14px">บรรจุภัณฑ์ที่ใช้ในรายการนี้</div>
+              <div class="hint">เลือกเฉพาะที่ใช้จริง ระบบจะหักสต๊อกให้อัตโนมัติ (ถ้าไม่ใช้อะไรเลย ไม่ต้องเลือก)</div>
+              <div class="card" id="out-packaging-list" style="margin-top:8px"><div class="empty-state">กำลังโหลด…</div></div>
+            </div>
 
             <div class="field" style="margin-top:14px"><label>หมายเหตุ (ไม่บังคับ)</label><input type="text" id="out-note"></div>
             <button class="btn mango" type="submit">บันทึกการขาย</button>
@@ -329,8 +335,12 @@
         <div class="field"><label>หน่วยนับ</label><input type="text" id="np-unit" placeholder="กล่อง / ผล / ชิ้น" required></div>
         <div class="field"><label>สต๊อกขั้นต่ำ</label><input type="number" id="np-minstock" value="5" min="0" required></div>
       </div>
-      <div class="field"><label>ราคาทุนเริ่มต้น</label><input type="number" id="np-cost" min="0" step="any" required></div>
-      <div class="field"><label>สต๊อกตั้งต้น</label><input type="number" id="np-initstock" value="0" min="0" step="any"></div>
+      <div class="field-row">
+        <div class="field"><label>ราคา (ราคาที่ซื้อ)</label><input type="number" id="np-price" min="0" step="any" required></div>
+        <div class="field"><label>จำนวน</label><input type="number" id="np-qty" min="0.01" step="any" required></div>
+      </div>
+      <div class="field"><label>ราคาทุน/หน่วย (คำนวณอัตโนมัติ)</label><input type="text" id="np-costperunit" disabled></div>
+      <div class="hint">สูตร: ราคา ÷ จำนวน = ราคาทุน/หน่วย — จำนวนที่กรอกตรงนี้คือสต๊อกที่รับเข้าครั้งแรกของสินค้านี้เลย ไม่ต้องไปบันทึกรับเข้าซ้ำที่ไหนอีก</div>
       <button class="btn" type="submit">บันทึกสินค้า</button>
     </form>
   </div>
@@ -346,6 +356,20 @@
       <div class="field"><label>นับของจริงได้เท่าไหร่</label><input type="number" id="adjust-new" min="0" step="any" required></div>
       <div class="field"><label>หมายเหตุ (ไม่บังคับ)</label><input type="text" id="adjust-note" placeholder="เช่น นับสต๊อกประจำสัปดาห์"></div>
       <button class="btn" type="submit">บันทึกคงเหลือ</button>
+    </form>
+  </div>
+</div>
+
+<div class="modal-backdrop hidden" id="modal-code">
+  <div class="modal-sheet">
+    <button class="modal-close" data-close-modal="modal-code">✕</button>
+    <h3>เพิ่ม Code บรรจุภัณฑ์</h3>
+    <form id="form-add-code">
+      <div class="field"><label>ชื่อ Code</label><input type="text" id="code-name" placeholder="เช่น กล่องเล็ก, ชุดไม้จิ้ม" required></div>
+      <div class="section-label" style="margin-top:10px">บรรจุภัณฑ์ที่จะหักอัตโนมัติเมื่อเลือก Code นี้</div>
+      <div class="hint">ติ๊กเลือกแล้วใส่จำนวนที่จะหักต่อการขาย 1 รายการ</div>
+      <div class="card" id="code-packaging-list" style="margin-top:8px"><div class="empty-state">กำลังโหลด…</div></div>
+      <button class="btn" type="submit" style="margin-top:14px">บันทึก Code</button>
     </form>
   </div>
 </div>
