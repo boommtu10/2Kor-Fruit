@@ -16,6 +16,15 @@ const state = {
 // รายชื่อ view ที่อยู่ในกลุ่มเมนู "สต๊อก" (ใช้ตอนกางเมนูย่อยอัตโนมัติ)
 // หมายเหตุ: เอา "stockin" ออกแล้ว เพราะรวมเข้ากับ "เพิ่มสินค้า" (modal) ไปแล้ว
 const STOCK_GROUP_VIEWS = ["products", "stockcut"];
+// กลุ่มเมนู "บันทึกขาย" — แยก "จัดการ Code" ออกมาเป็นหน้าย่อยต่างหาก ไม่ให้
+// อยู่บนหน้าบันทึกขายเหมือนเดิม เพราะรายการ Code ที่ยาวขึ้นเรื่อยๆ จะดันฟอร์ม
+// บันทึกขายให้ตกลงไปด้านล่าง กรอกข้อมูลไม่สะดวก
+const SALES_GROUP_VIEWS = ["stockout", "codes"];
+// รวมทุกกลุ่มเมนูไว้ที่เดียว เผื่อมีกลุ่มเพิ่มในอนาคตแค่มาต่อ array ตรงนี้พอ
+const SIDEBAR_GROUPS = [
+  { id: "group-stock", views: STOCK_GROUP_VIEWS },
+  { id: "group-sales", views: SALES_GROUP_VIEWS },
+];
 
 // ---------------- API helper ----------------
 // หมายเหตุ: POST ไม่ตั้ง header Content-Type เอง เพื่อเลี่ยงปัญหา
@@ -159,11 +168,15 @@ function goToView(name) {
     b.classList.toggle("active", b.dataset.view === name)
   );
 
-  // auto-expand / highlight the "สต๊อก" group when a stock-related view is active
-  const stockGroup = document.getElementById("group-stock");
-  const isStockView = STOCK_GROUP_VIEWS.includes(name);
-  stockGroup.classList.toggle("has-active", isStockView);
-  if (isStockView) stockGroup.classList.add("expanded");
+  // auto-expand / highlight กลุ่มเมนูที่มี view ปัจจุบันอยู่ข้างใน (วนทุกกลุ่ม
+  // ที่มีอยู่ ไม่ต้องเขียนซ้ำทีละกลุ่มเหมือนเดิม)
+  SIDEBAR_GROUPS.forEach(g => {
+    const el = document.getElementById(g.id);
+    if (!el) return;
+    const isActive = g.views.includes(name);
+    el.classList.toggle("has-active", isActive);
+    if (isActive) el.classList.add("expanded");
+  });
 
   closeMobileSidebar();
 
@@ -171,7 +184,9 @@ function goToView(name) {
   if (name === "products") renderProductsList();
   if (name === "stockcut") { /* selects already filled via fillProductSelects */ }
   if (name === "stockout") { loadPackagingOptions(); loadSaleItemNames(); loadCodes(); }
+  if (name === "codes") loadCodes();
   if (name === "summary") loadSummary();
+  if (name === "stats") loadStats();
   if (name === "employees") loadEmployeesList();
 }
 
@@ -877,6 +892,48 @@ function renderSummaryStockOutList(list) {
         <div class="sub">${timeLabel} · จำนวน ${r.qty} × ${money(r.sellPrice)}${r.channel ? " · " + r.channel : ""}${r.employee ? " · " + r.employee : ""}</div>
       </div>
       <div class="trail pos">${money(r.total)}</div>
+    `;
+    wrap.appendChild(row);
+  });
+}
+
+// ============================================================
+// STATS VIEW (สถิติ) — รายการขายดีที่สุดของเดือนปัจจุบัน
+// backend กรองเฉพาะเดือนนี้ให้เองแล้ว (ดู getSalesStats ใน Code.gs) หน้านี้
+// แค่แสดงผล ไม่มีตัวเลือกช่วงวันที่ให้เลือกเอง เพราะออกแบบให้รีเซ็ตอัตโนมัติ
+// ทุกเดือนตามที่ต้องการ
+async function loadStats() {
+  const label = document.getElementById("stats-month-label");
+  const wrap = document.getElementById("stats-list");
+  try {
+    const res = await apiGet("getSalesStats");
+    const parts = String(res.month || "").split("-").map(Number);
+    if (parts.length === 2 && parts[0] && parts[1]) {
+      const d = new Date(parts[0], parts[1] - 1, 1);
+      label.textContent = "เดือน " + d.toLocaleDateString("th-TH", { month: "long", year: "numeric" }) + " — ขึ้นเดือนใหม่ตัวเลขจะเริ่มนับใหม่ให้เองอัตโนมัติ";
+    }
+    renderStatsList(res.items || []);
+  } catch (err) {
+    wrap.innerHTML = '<div class="empty-state">โหลดสถิติไม่สำเร็จ</div>';
+  }
+}
+
+function renderStatsList(items) {
+  const wrap = document.getElementById("stats-list");
+  if (!items.length) {
+    wrap.innerHTML = '<div class="empty-state">ยังไม่มีรายการขายในเดือนนี้</div>';
+    return;
+  }
+  wrap.innerHTML = "";
+  items.forEach((item, idx) => {
+    const row = document.createElement("div");
+    row.className = "list-row";
+    row.innerHTML = `
+      <div class="main">
+        <div class="title">#${idx + 1} ${item.itemName}</div>
+        <div class="sub">ขายได้ ${item.qty} หน่วย</div>
+      </div>
+      <div class="trail pos">${money(item.total)}</div>
     `;
     wrap.appendChild(row);
   });

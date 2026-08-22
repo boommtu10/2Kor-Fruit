@@ -83,9 +83,19 @@
         </div>
       </div>
 
-      <button class="side-item" data-view="stockout" title="บันทึกขาย">
-        <span class="ic">🧾</span><span class="lbl">บันทึกขาย</span>
-      </button>
+      <div class="side-group" id="group-sales">
+        <button class="side-item side-group-toggle" data-group="sales" title="บันทึกขาย">
+          <span class="ic">🧾</span><span class="lbl">บันทึกขาย</span><span class="chev">▾</span>
+        </button>
+        <div class="side-submenu">
+          <button class="side-subitem" data-view="stockout" title="บันทึกขาย">
+            <span class="ic">🧾</span><span class="lbl">บันทึกขาย</span>
+          </button>
+          <button class="side-subitem" data-view="codes" title="จัดการ Code">
+            <span class="ic">🔖</span><span class="lbl">จัดการ Code</span>
+          </button>
+        </div>
+      </div>
       <button class="side-item" data-view="waste" title="ของเสีย">
         <span class="ic">🍂</span><span class="lbl">ของเสีย</span>
       </button>
@@ -94,6 +104,9 @@
       </button>
       <button class="side-item" data-view="summary" title="สรุปยอด">
         <span class="ic">📊</span><span class="lbl">สรุปยอด</span>
+      </button>
+      <button class="side-item" data-view="stats" title="สถิติ">
+        <span class="ic">🏆</span><span class="lbl">สถิติ</span>
       </button>
       <button class="side-item hidden" data-view="employees" id="side-employees" title="พนักงาน">
         <span class="ic">👥</span><span class="lbl">พนักงาน</span>
@@ -167,11 +180,6 @@
       <section data-view="stockout" class="hidden">
         <h2 class="view-title">บันทึกการขาย</h2>
 
-        <div class="section-label">จัดการ Code บรรจุภัณฑ์</div>
-        <div class="hint" style="margin-top:-4px">Code คือชุดบรรจุภัณฑ์ที่ตั้งไว้ล่วงหน้า พอเลือก Code ตอนบันทึกขาย ระบบจะหักสต๊อกบรรจุภัณฑ์ตามที่ผูกไว้ให้อัตโนมัติ ไม่ต้องติ๊กเลือกเองทุกครั้ง</div>
-        <button class="btn outline" type="button" id="btn-add-code" style="margin:8px 0 8px">＋ เพิ่ม Code</button>
-        <div class="card" id="codes-list" style="margin-bottom:16px"><div class="empty-state">ยังไม่มี Code — กด "+ เพิ่ม Code" เพื่อสร้างอันแรก</div></div>
-
         <div class="card">
           <form id="form-stockout">
             <div class="field">
@@ -216,6 +224,14 @@
             <button class="btn mango" type="submit">บันทึกการขาย</button>
           </form>
         </div>
+      </section>
+
+      <!-- ---- CODES (จัดการ Code บรรจุภัณฑ์) ---- -->
+      <section data-view="codes" class="hidden">
+        <h2 class="view-title">จัดการ Code บรรจุภัณฑ์</h2>
+        <div class="hint" style="margin-top:-6px">Code คือชุดบรรจุภัณฑ์ที่ตั้งไว้ล่วงหน้า พอเลือก Code ตอนบันทึกขาย ระบบจะหักสต๊อกบรรจุภัณฑ์ตามที่ผูกไว้ให้อัตโนมัติ ไม่ต้องติ๊กเลือกเองทุกครั้ง</div>
+        <button class="btn outline" type="button" id="btn-add-code" style="margin:10px 0 12px">＋ เพิ่ม Code</button>
+        <div class="card" id="codes-list"><div class="empty-state">ยังไม่มี Code — กด "+ เพิ่ม Code" เพื่อสร้างอันแรก</div></div>
       </section>
 
       <!-- ---- WASTE ---- -->
@@ -301,6 +317,14 @@
           <div class="list-row"><div class="main title">ยอดซื้อวัตถุดิบ (ช่วงนี้)</div><div class="trail" id="sum-raw">฿0</div></div>
           <div class="list-row"><div class="main title">ยอดซื้อทั้งหมด (รวมบรรจุภัณฑ์)</div><div class="trail" id="sum-in">฿0</div></div>
         </div>
+      </section>
+
+      <!-- ---- STATS (สถิติ) ---- -->
+      <section data-view="stats" class="hidden">
+        <h2 class="view-title">สถิติ</h2>
+        <div class="hint" id="stats-month-label" style="margin:-6px 0 10px"></div>
+        <div class="section-label">รายการขายดีที่สุด (เรียงตามจำนวนที่ขายได้)</div>
+        <div class="card" id="stats-list"><div class="empty-state">กำลังโหลด…</div></div>
       </section>
 
       <!-- ---- EMPLOYEES (admin) ---- -->
