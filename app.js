@@ -502,6 +502,9 @@ async function loadSaleItemNames() {
 // เก็บชื่อสินค้าไว้ใน data-pack-name ด้วย เพื่อให้ตอนบันทึก Code เอาชื่อไป
 // ฝังใน Code ได้เลย ไม่ต้องย้อนไปหาใน state.products อีกที (เผื่อสินค้านั้น
 // ถูกปิดใช้งาน/เปลี่ยนชื่อไปแล้วในอนาคต Code เก่าจะยังอ่านชื่อเดิมได้)
+// รายการที่มี p._stale = true คือของที่ Code เดิมเคยผูกไว้แต่ตอนนี้สต๊อก
+// เหลือ 0 แล้ว (ของเก่าหมด ของใหม่ราคาอาจไม่เท่าเดิม) ยังต้องโชว์ให้เห็นตอน
+// แก้ไข Code เพื่อให้ติ๊กออก/เปลี่ยนไปเลือกของใหม่แทนได้ ไม่ใช่หายไปเงียบๆ
 function renderPackagingChecklist(containerId, list, emptyMsg) {
   const wrap = document.getElementById(containerId);
   if (!list.length) { wrap.innerHTML = `<div class="empty-state">${emptyMsg}</div>`; return; }
@@ -509,10 +512,13 @@ function renderPackagingChecklist(containerId, list, emptyMsg) {
   list.forEach(p => {
     const row = document.createElement("div");
     row.className = "list-row";
+    const statusLabel = p._stale
+      ? '<span class="hint">(หมดสต๊อกแล้ว — เลือกของใหม่แทนถ้ามี)</span>'
+      : `<span class="hint">(คงเหลือ ${p["สต๊อกปัจจุบัน"]} ${p["หน่วยนับ"]})</span>`;
     row.innerHTML = `
       <label style="display:flex;align-items:center;gap:8px;flex:1;cursor:pointer">
         <input type="checkbox" class="pack-check" data-pack-id="${p["รหัสสินค้า"]}" data-pack-name="${p["ชื่อสินค้า"]}">
-        <span>${p["ชื่อสินค้า"]} <span class="hint">(คงเหลือ ${p["สต๊อกปัจจุบัน"]} ${p["หน่วยนับ"]})</span></span>
+        <span>${p["ชื่อสินค้า"]} ${statusLabel}</span>
       </label>
       <input type="number" class="pack-qty" data-pack-id="${p["รหัสสินค้า"]}" value="1" min="1" step="1" style="width:64px" disabled>
     `;
@@ -559,12 +565,33 @@ async function loadPackagingOptions() {
   }
 }
 
-// รายการบรรจุภัณฑ์สำหรับ "ตั้งค่า Code" ไม่กรองเฉพาะที่มีของเหลือ (>0)
-// เพราะ Code คือการตั้ง "สูตร" ไว้ล่วงหน้า ไม่ใช่การหักของจริง ณ ตอนนั้น
-async function loadCodePackagingOptions() {
+// รายการบรรจุภัณฑ์สำหรับ "ตั้งค่า Code" — โชว์เฉพาะที่ยังมีของเหลือในสต๊อก
+// (>0) เท่านั้น ตัวที่หมดแล้วไม่ต้องขึ้นให้เลือกใหม่ (ผูกไปก็ไม่มีของจริงจะหัก)
+// ยกเว้นตอน "แก้ไข Code" ที่ตัวเดิมเคยผูกไว้แล้วดันหมดสต๊อกไปพอดี — จะยังโชว์
+// แถวเดิมนั้นไว้ให้เห็น (มีป้ายบอกว่าหมดแล้ว) เพื่อให้ติ๊กออกหรือเปลี่ยนไป
+// เลือกของใหม่แทนได้ ไม่ใช่หายไปเงียบๆ จนไม่รู้ว่า Code นี้ยังอ้างของเก่าอยู่
+// boundItems = รายการบรรจุภัณฑ์ที่ Code นี้เคยผูกไว้ (ใช้ตอนแก้ไขเท่านั้น)
+async function loadCodePackagingOptions(boundItems) {
+  boundItems = Array.isArray(boundItems) ? boundItems : [];
   try {
     const all = await apiGet("getPackaging");
-    renderPackagingChecklist("code-packaging-list", Array.isArray(all) ? all : [], 'ยังไม่มีบรรจุภัณฑ์ในระบบ ไปเพิ่มที่เมนู "เพิ่มสินค้า" ก่อน');
+    const inStock = Array.isArray(all) ? all.filter(p => Number(p["สต๊อกปัจจุบัน"]) > 0) : [];
+    const inStockIds = new Set(inStock.map(p => p["รหัสสินค้า"]));
+    const stale = boundItems
+      .filter(b => !inStockIds.has(b.productId))
+      .map(b => ({ "รหัสสินค้า": b.productId, "ชื่อสินค้า": b.name || b.productId, _stale: true }));
+
+    renderPackagingChecklist("code-packaging-list", [...inStock, ...stale], 'ยังไม่มีบรรจุภัณฑ์ที่มีของเหลือในสต๊อก ไปรับเข้าที่เมนู "เพิ่มสินค้า" ก่อน');
+
+    // ติ๊กของเดิมที่เคยผูกไว้กลับคืน พร้อมใส่จำนวนเดิม (ใช้ตอนแก้ไข)
+    boundItems.forEach(b => {
+      const chk = document.querySelector(`#code-packaging-list .pack-check[data-pack-id="${b.productId}"]`);
+      if (!chk) return;
+      chk.checked = true;
+      const qtyInput = chk.closest(".list-row").querySelector(".pack-qty");
+      qtyInput.disabled = false;
+      qtyInput.value = b.qty;
+    });
   } catch (err) {
     document.getElementById("code-packaging-list").innerHTML = '<div class="empty-state">โหลดบรรจุภัณฑ์ไม่สำเร็จ</div>';
   }
@@ -588,8 +615,40 @@ async function loadCodes() {
     });
     if (cur) sel.value = cur;
     updateOutCodeUI();
+    renderCodesList();
   } catch (err) { /* เงียบไว้ — ยังเลือกบรรจุภัณฑ์เองได้ตามปกติ */ }
 }
+
+// รายการ Code ทั้งหมดที่เคยตั้งไว้ พร้อมสรุปว่าผูกกับบรรจุภัณฑ์อะไรบ้าง
+// และปุ่ม "แก้ไข" ต่อรายการ — ใช้ตอนบรรจุภัณฑ์เก่าหมดสต๊อกแล้วต้องเปลี่ยนไป
+// ผูกกับสินค้าล็อตใหม่ (ที่อาจราคาไม่เท่าเดิม) แทนของเดิม
+function renderCodesList() {
+  const wrap = document.getElementById("codes-list");
+  if (!state.codes.length) {
+    wrap.innerHTML = '<div class="empty-state">ยังไม่มี Code — กด "+ เพิ่ม Code" เพื่อสร้างอันแรก</div>';
+    return;
+  }
+  wrap.innerHTML = "";
+  state.codes.forEach(c => {
+    const parts = (c.packaging || []).map(p => `${p.name || p.productId} x${p.qty}`);
+    const row = document.createElement("div");
+    row.className = "list-row";
+    row.innerHTML = `
+      <div class="main">
+        <div class="title">${c.name}</div>
+        <div class="sub">${parts.length ? parts.join(", ") : "ยังไม่ได้ผูกบรรจุภัณฑ์"}</div>
+      </div>
+      <button type="button" class="btn outline btn-edit-code" data-code-id="${c.id}" style="width:auto;padding:8px 14px">แก้ไข</button>
+    `;
+    wrap.appendChild(row);
+  });
+}
+document.getElementById("codes-list").addEventListener("click", (e) => {
+  const btn = e.target.closest(".btn-edit-code");
+  if (!btn) return;
+  const code = state.codes.find(c => c.id === btn.dataset.codeId);
+  if (code) openCodeModal(code);
+});
 
 // เลือก Code แล้ว: ซ่อนช่องติ๊กบรรจุภัณฑ์เอง (เพราะหักให้อัตโนมัติแล้ว)
 // ไม่เลือก Code (ค่าว่าง): โชว์ช่องติ๊กบรรจุภัณฑ์เองแบบเดิมกลับมาเป็นทางเลือกสำรอง
@@ -609,24 +668,35 @@ function updateOutCodeUI() {
 }
 document.getElementById("out-code").addEventListener("change", updateOutCodeUI);
 
-document.getElementById("btn-add-code").addEventListener("click", () => {
-  loadCodePackagingOptions();
+// เปิด modal ตั้งค่า Code — code = null คือโหมด "เพิ่มใหม่", ส่ง code object
+// เข้ามาคือโหมด "แก้ไข" (พรีฟิลชื่อ + ติ๊กบรรจุภัณฑ์เดิมกลับให้)
+function openCodeModal(code) {
+  const form = document.getElementById("form-add-code");
+  form.reset();
+  document.getElementById("code-id").value = code ? code.id : "";
+  document.getElementById("code-name").value = code ? code.name : "";
+  document.getElementById("modal-code-title").textContent = code ? "แก้ไข Code บรรจุภัณฑ์" : "เพิ่ม Code บรรจุภัณฑ์";
+  document.getElementById("code-submit-btn").textContent = code ? "บันทึกการแก้ไข" : "บันทึก Code";
+  loadCodePackagingOptions(code ? code.packaging : []);
   openModal("modal-code");
-});
+}
+
+document.getElementById("btn-add-code").addEventListener("click", () => openCodeModal(null));
 
 document.getElementById("form-add-code").addEventListener("submit", async (e) => {
   e.preventDefault();
+  const codeId = document.getElementById("code-id").value;
   const name = document.getElementById("code-name").value.trim();
   if (!name) return toast("กรุณาตั้งชื่อ Code", true);
   const packaging = collectSelectedPackaging("code-packaging-list");
   if (!packaging.length) return toast("กรุณาเลือกบรรจุภัณฑ์อย่างน้อย 1 อย่าง", true);
-  const res = await submitWithLock(e.target, "addCode", {
-    name,
-    packaging,
-    employee: state.employee.name,
-  });
+
+  const res = codeId
+    ? await submitWithLock(e.target, "updateCode", { codeId, name, packaging })
+    : await submitWithLock(e.target, "addCode", { name, packaging, employee: state.employee.name });
+
   if (res.ok) {
-    toast("บันทึก Code เรียบร้อย");
+    toast(codeId ? "แก้ไข Code เรียบร้อย" : "บันทึก Code เรียบร้อย");
     e.target.reset();
     closeModal("modal-code");
     loadCodes();

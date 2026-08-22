@@ -169,7 +169,8 @@
 
         <div class="section-label">จัดการ Code บรรจุภัณฑ์</div>
         <div class="hint" style="margin-top:-4px">Code คือชุดบรรจุภัณฑ์ที่ตั้งไว้ล่วงหน้า พอเลือก Code ตอนบันทึกขาย ระบบจะหักสต๊อกบรรจุภัณฑ์ตามที่ผูกไว้ให้อัตโนมัติ ไม่ต้องติ๊กเลือกเองทุกครั้ง</div>
-        <button class="btn outline" type="button" id="btn-add-code" style="margin:8px 0 16px">＋ เพิ่ม Code</button>
+        <button class="btn outline" type="button" id="btn-add-code" style="margin:8px 0 8px">＋ เพิ่ม Code</button>
+        <div class="card" id="codes-list" style="margin-bottom:16px"><div class="empty-state">ยังไม่มี Code — กด "+ เพิ่ม Code" เพื่อสร้างอันแรก</div></div>
 
         <div class="card">
           <form id="form-stockout">
@@ -363,13 +364,14 @@
 <div class="modal-backdrop hidden" id="modal-code">
   <div class="modal-sheet">
     <button class="modal-close" data-close-modal="modal-code">✕</button>
-    <h3>เพิ่ม Code บรรจุภัณฑ์</h3>
+    <h3 id="modal-code-title">เพิ่ม Code บรรจุภัณฑ์</h3>
     <form id="form-add-code">
+      <input type="hidden" id="code-id" value="">
       <div class="field"><label>ชื่อ Code</label><input type="text" id="code-name" placeholder="เช่น กล่องเล็ก, ชุดไม้จิ้ม" required></div>
       <div class="section-label" style="margin-top:10px">บรรจุภัณฑ์ที่จะหักอัตโนมัติเมื่อเลือก Code นี้</div>
-      <div class="hint">ติ๊กเลือกแล้วใส่จำนวนที่จะหักต่อการขาย 1 รายการ</div>
+      <div class="hint">ติ๊กเลือกแล้วใส่จำนวนที่จะหักต่อการขาย 1 รายการ — แสดงเฉพาะบรรจุภัณฑ์ที่ยังมีของเหลือในสต๊อกเท่านั้น (ถ้ากำลังแก้ไข Code เดิม และของเก่าหมดสต๊อกไปแล้ว จะมีแถวเดิมโชว์ไว้ให้เปลี่ยนเป็นของใหม่แทน)</div>
       <div class="card" id="code-packaging-list" style="margin-top:8px"><div class="empty-state">กำลังโหลด…</div></div>
-      <button class="btn" type="submit" style="margin-top:14px">บันทึก Code</button>
+      <button class="btn" type="submit" id="code-submit-btn" style="margin-top:14px">บันทึก Code</button>
     </form>
   </div>
 </div>
