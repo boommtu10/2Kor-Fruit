@@ -11,6 +11,8 @@ const state = {
   packaging: [],       // บรรจุภัณฑ์ที่ยัง active ใช้ในหน้าขาย
   codes: [],            // Code บรรจุภัณฑ์ที่ตั้งไว้ล่วงหน้า (ดูหน้าบันทึกการขาย)
   adjustTarget: null,   // สินค้าที่กำลังจะปรับคงเหลือ {id, name, stock, unit}
+  lowStockList: [],     // รายการสินค้าใกล้หมดล่าสุด (ดึงครั้งเดียว ใช้ทั้งการ์ดหน้าหลัก
+                         // และหน้า "ดูทั้งหมด" กันยิง API ซ้ำโดยไม่จำเป็น)
 };
 
 // รายชื่อ view ที่อยู่ในกลุ่มเมนู "สต๊อก" (ใช้ตอนกางเมนูย่อยอัตโนมัติ)
@@ -188,6 +190,7 @@ function goToView(name) {
   if (name === "summary") loadSummary();
   if (name === "stats") loadStats();
   if (name === "employees") loadEmployeesList();
+  if (name === "lowstock-all") renderLowStockAll();
 }
 
 document.addEventListener("click", (e) => {
@@ -402,25 +405,49 @@ document.getElementById("form-adjust").addEventListener("submit", async (e) => {
 async function refreshLowStock() {
   try {
     const low = await apiGet("getLowStock");
-    const badge = document.getElementById("low-stock-badge");
-    badge.textContent = low.length;
-    badge.classList.toggle("hidden", low.length === 0);
+    state.lowStockList = low; // เก็บรายการเต็มไว้ ให้หน้า "ดูทั้งหมด" เอาไปใช้ต่อได้เลย ไม่ต้องยิง API ซ้ำ
 
     const card = document.getElementById("dash-lowstock-card");
     if (!low.length) { card.innerHTML = '<div class="empty-state">สต๊อกทุกอย่างปกติดี 👍</div>'; return; }
+
     card.innerHTML = "";
-    low.forEach(p => {
-      const row = document.createElement("div");
-      row.className = "list-row";
-      row.innerHTML = `
-        <div class="slice-mark danger" style="width:34px;height:34px"></div>
-        <div class="main">
-          <div class="title">${p["ชื่อสินค้า"]}</div>
-          <div class="sub">คงเหลือ ${p["สต๊อกปัจจุบัน"]} ${p["หน่วยนับ"]} (ขั้นต่ำ ${p["สต๊อกขั้นต่ำ"]})</div>
-        </div>`;
-      card.appendChild(row);
-    });
+    // หน้าหลักโชว์แค่ 10 รายการแรกพอ กันไม่ให้การ์ดยาวจนต้องเลื่อนเยอะ
+    // ถ้ามีมากกว่านั้นค่อยให้กดไปดูรายการที่เหลือในหน้าแยกต่างหาก
+    low.slice(0, 10).forEach(p => card.appendChild(buildLowStockRow(p)));
+
+    if (low.length > 10) {
+      const more = document.createElement("div");
+      more.className = "list-row";
+      more.style.cursor = "pointer";
+      more.dataset.goto = "lowstock-all";
+      more.innerHTML = `<div class="main title">ดูทั้งหมด (${low.length} รายการ) ›</div>`;
+      card.appendChild(more);
+    }
   } catch (err) { /* เงียบไว้ ไม่รบกวนหน้าจอหลัก */ }
+}
+
+// สร้าง 1 แถวของรายการสินค้าใกล้หมด — แยกออกมาจาก refreshLowStock() เพราะ
+// ใช้ซ้ำทั้งในการ์ดหน้าหลัก (10 แถวแรก) และหน้า "ดูทั้งหมด" (ทุกแถว)
+function buildLowStockRow(p) {
+  const row = document.createElement("div");
+  row.className = "list-row";
+  row.innerHTML = `
+    <div class="slice-mark danger" style="width:34px;height:34px"></div>
+    <div class="main">
+      <div class="title">${p["ชื่อสินค้า"]}</div>
+      <div class="sub">คงเหลือ ${p["สต๊อกปัจจุบัน"]} ${p["หน่วยนับ"]} (ขั้นต่ำ ${p["สต๊อกขั้นต่ำ"]})</div>
+    </div>`;
+  return row;
+}
+
+// หน้า "สินค้าใกล้หมดทั้งหมด" — ใช้ข้อมูลที่ refreshLowStock() ดึงมาแล้ว
+// ไม่ยิง apiGet ซ้ำ เพราะเป็นข้อมูลชุดเดียวกัน แค่โชว์ครบทุกแถวแทนที่จะตัดที่ 10
+function renderLowStockAll() {
+  const wrap = document.getElementById("lowstock-all-list");
+  const low = state.lowStockList;
+  if (!low.length) { wrap.innerHTML = '<div class="empty-state">สต๊อกทุกอย่างปกติดี 👍</div>'; return; }
+  wrap.innerHTML = "";
+  low.forEach(p => wrap.appendChild(buildLowStockRow(p)));
 }
 
 // ---- modal: add product ----
@@ -839,21 +866,54 @@ async function loadDashboard() {
 // รายเดือน: เพิ่มการหักต้นทุนผลไม้ที่ตัดสต๊อกจริง (จากเมนู "ตัดสต๊อก")
 // ============================================================
 let currentPeriod = "day";
+
+// สลับว่าจะโชว์ช่องวันที่เดี่ยว (รายวัน/รายเดือน) หรือช่องจากวัน-ถึงวัน (ช่วงวันที่)
+// ตามปุ่มที่กำลังเลือกอยู่ ไม่ต้องรอ loadSummary ทำงานเสร็จก่อนค่อยสลับ UI
+function updateSummaryDateInputs() {
+  const isRange = currentPeriod === "range";
+  document.getElementById("summary-date-wrap").classList.toggle("hidden", isRange);
+  document.getElementById("summary-range-wrap").classList.toggle("hidden", !isRange);
+}
+
 document.querySelectorAll(".toggle-group [data-period]").forEach(btn => {
   btn.addEventListener("click", () => {
     document.querySelectorAll(".toggle-group [data-period]").forEach(b => b.classList.remove("active"));
     btn.classList.add("active");
     currentPeriod = btn.dataset.period;
+    updateSummaryDateInputs();
     loadSummary();
   });
 });
 document.getElementById("summary-date").addEventListener("change", loadSummary);
+document.getElementById("summary-start-date").addEventListener("change", loadSummary);
+document.getElementById("summary-end-date").addEventListener("change", loadSummary);
 
 async function loadSummary() {
   const dateInput = document.getElementById("summary-date");
-  if (!dateInput.value) dateInput.value = new Date().toISOString().slice(0, 10);
+  const startInput = document.getElementById("summary-start-date");
+  const endInput = document.getElementById("summary-end-date");
+  const todayStr = new Date().toISOString().slice(0, 10);
+  if (!dateInput.value) dateInput.value = todayStr;
+
+  // โหมด "ช่วงวันที่" ต้องส่ง startDate/endDate ไป backend แทน date เดี่ยว ๆ
+  // ถ้าผู้ใช้เผลอเลือกวันเริ่มมาหลังวันสิ้นสุด สลับให้อัตโนมัติ กันข้อมูลว่างเปล่า
+  const params = { period: currentPeriod };
+  if (currentPeriod === "range") {
+    if (!startInput.value) startInput.value = todayStr;
+    if (!endInput.value) endInput.value = todayStr;
+    if (startInput.value > endInput.value) {
+      const tmp = startInput.value;
+      startInput.value = endInput.value;
+      endInput.value = tmp;
+    }
+    params.startDate = startInput.value;
+    params.endDate = endInput.value;
+  } else {
+    params.date = dateInput.value;
+  }
+
   try {
-    const sum = await apiGet("getSummary", { period: currentPeriod, date: dateInput.value });
+    const sum = await apiGet("getSummary", params);
     document.getElementById("sum-profit").textContent = money(sum.profit);
     document.getElementById("sum-revenue").textContent = money(sum.totalRevenue);
     document.getElementById("sum-raw").textContent = money(sum.totalRawMaterialIn);

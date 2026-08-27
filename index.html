@@ -125,9 +125,7 @@
         <div class="emp" id="topbar-emp">—</div>
       </div>
       <button class="icon-btn hidden" id="btn-install" title="ติดตั้งเป็นแอป">⬇️</button>
-      <button class="icon-btn" id="btn-low-stock" title="สินค้าใกล้หมด">
-        🔔<span class="badge hidden" id="low-stock-badge">0</span>
-      </button>
+      <button class="icon-btn" id="btn-low-stock" title="สินค้าใกล้หมด">🔔</button>
       <button class="icon-btn" id="btn-logout" title="ออกจากระบบ">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v8"/><path d="M18.4 6.6a9 9 0 1 1-12.77 0"/></svg>
       </button>
@@ -145,11 +143,18 @@
           <div class="stat-card plum"><div class="label">รายการขาย</div><div class="value" id="dash-count">0</div></div>
         </div>
 
-        <div class="section-label">สินค้าใกล้หมด / หมดสต๊อก</div>
+        <div class="section-label">สินค้าใกล้หมด</div>
         <div class="card" id="dash-lowstock-card">
           <div class="empty-state">กำลังโหลด…</div>
         </div>
 
+      </section>
+
+      <!-- ---- LOW STOCK: ดูทั้งหมด (จากปุ่ม "ดูทั้งหมด" ในหน้าหลัก เมื่อมีเกิน 10 รายการ) ---- -->
+      <section data-view="lowstock-all" class="hidden">
+        <h2 class="view-title">สินค้าใกล้หมดทั้งหมด</h2>
+        <button class="btn outline" data-goto="dashboard" style="margin-bottom:14px">‹ กลับหน้าหลัก</button>
+        <div class="card" id="lowstock-all-list"><div class="empty-state">กำลังโหลด…</div></div>
       </section>
 
       <!-- ---- PRODUCTS / ดูคงเหลือ ---- -->
@@ -289,8 +294,13 @@
         <div class="toggle-group">
           <button class="active" data-period="day">รายวัน</button>
           <button data-period="month">รายเดือน</button>
+          <button data-period="range">ช่วงวันที่</button>
         </div>
-        <div class="field"><input type="date" id="summary-date"></div>
+        <div class="field" id="summary-date-wrap"><input type="date" id="summary-date"></div>
+        <div class="field-row hidden" id="summary-range-wrap">
+          <div class="field"><label>จากวันที่</label><input type="date" id="summary-start-date"></div>
+          <div class="field"><label>ถึงวันที่</label><input type="date" id="summary-end-date"></div>
+        </div>
 
         <div class="profit-compare">
           <div class="profit-box accurate" style="grid-column:1/-1">
