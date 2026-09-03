@@ -76,6 +76,42 @@ function money(n) {
   return "฿" + v.toLocaleString("th-TH", { maximumFractionDigits: 2 });
 }
 
+// ---------------- Export CSV ----------------
+// ใช้ร่วมกันทั้งหน้า "สถิติ" และหน้า "สรุปยอด" — แปลง array ของแถว (แต่ละแถว
+// เป็น array ของค่า) ให้เป็นไฟล์ .csv แล้วสั่งดาวน์โหลดผ่านเบราว์เซอร์ทันที
+// ไม่ต้องยิง request ไปหา Apps Script เพิ่ม เพราะข้อมูลที่จะ Export มีอยู่ใน
+// หน้าเว็บอยู่แล้ว (โหลดมาแสดงผลไปแล้วตอนนี้)
+function csvEscape(val) {
+  const s = val === null || val === undefined ? "" : String(val);
+  // ค่าที่มี comma / ขึ้นบรรทัดใหม่ / เครื่องหมายคำพูด ต้องครอบด้วย " "
+  // และ escape เครื่องหมายคำพูดข้างในเป็น "" ตามมาตรฐาน CSV ไม่งั้นเปิดใน
+  // Excel แล้วคอลัมน์จะเลื่อนเพี้ยน
+  if (/[",\r\n]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
+  return s;
+}
+function toCSV(rows) {
+  return rows.map(row => row.map(csvEscape).join(",")).join("\r\n");
+}
+// ตัดอักขระที่ใช้เป็นชื่อไฟล์ไม่ได้ออก (ชื่อไฟล์ภาษาไทยใช้ได้ปกติ แค่กัน
+// เครื่องหมายที่มักหลุดมาจากช่วงวันที่ เช่น "ถึง"/ช่องว่าง ให้อ่านง่ายขึ้น)
+function sanitizeFilename(s) {
+  return String(s).replace(/[\\/:*?"<>|]/g, "_").replace(/\s+/g, "_");
+}
+function downloadCSV(filename, rows) {
+  // เติม BOM (\uFEFF) นำหน้าเสมอ ไม่งั้น Excel เปิดไฟล์ CSV ภาษาไทยแล้ว
+  // ตัวอักษรจะเพี้ยนเป็นตัวอักษรมั่ว (ปัญหา encoding UTF-8 ที่พบบ่อยมาก)
+  const csv = "\uFEFF" + toCSV(rows);
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = sanitizeFilename(filename);
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
 // ============================================================
 // LOGIN
 // ============================================================
@@ -866,6 +902,7 @@ async function loadDashboard() {
 // รายเดือน: เพิ่มการหักต้นทุนผลไม้ที่ตัดสต๊อกจริง (จากเมนู "ตัดสต๊อก")
 // ============================================================
 let currentPeriod = "day";
+let lastSummary = null; // ผลลัพธ์ getSummary ล่าสุดที่โหลดมา ใช้ตอนกด Export (ไม่ต้องยิง API ซ้ำ)
 
 // สลับว่าจะโชว์ช่องวันที่เดี่ยว (รายวัน/รายเดือน) หรือช่องจากวัน-ถึงวัน (ช่วงวันที่)
 // ตามปุ่มที่กำลังเลือกอยู่ ไม่ต้องรอ loadSummary ทำงานเสร็จก่อนค่อยสลับ UI
@@ -914,6 +951,7 @@ async function loadSummary() {
 
   try {
     const sum = await apiGet("getSummary", params);
+    lastSummary = sum;
     document.getElementById("sum-profit").textContent = money(sum.profit);
     document.getElementById("sum-revenue").textContent = money(sum.totalRevenue);
     document.getElementById("sum-raw").textContent = money(sum.totalRawMaterialIn);
@@ -929,6 +967,41 @@ async function loadSummary() {
     renderSummaryStockOutList(sum.stockOutList);
   } catch (err) { toast("โหลดสรุปยอดไม่สำเร็จ", true); }
 }
+
+// Export หน้า "สรุปยอด" เป็น CSV — ใช้ข้อมูลชุดล่าสุดที่หน้าเว็บโหลดมาแสดง
+// อยู่แล้ว (lastSummary) จึง Export ได้ทันทีไม่ว่าตอนนั้นกำลังเลือกดูแบบ
+// "รายวัน" / "รายเดือน" / "ช่วงวันที่" อยู่ก็ตาม เพราะ backend ส่ง label
+// ของช่วงที่เลือก (sum.period) กลับมาด้วยอยู่แล้วทุกโหมด
+document.getElementById("summary-export-btn").addEventListener("click", () => {
+  if (!lastSummary) return toast("ยังไม่มีข้อมูลให้ Export", true);
+  const sum = lastSummary;
+  const rows = [
+    ["สรุปยอด — " + sum.period],
+    [],
+    ["รายการ", "จำนวนเงิน (บาท)"],
+    ["ยอดขาย", sum.totalRevenue],
+    ["ต้นทุนผลไม้ที่ตัดใช้จริง", sum.totalRawMaterialCut],
+    ["ต้นทุนบรรจุภัณฑ์ที่ใช้จริง", sum.totalPackagingCost],
+    ["มูลค่าของเสีย", sum.totalWaste],
+    ["ค่าใช้จ่ายอื่น", sum.totalOtherCosts],
+    ["กำไรโดยประมาณ", sum.profit],
+    [],
+    ["ข้อมูลอ้างอิงกระแสเงินสด (ไม่รวมในสูตรกำไรด้านบน)"],
+    ["ยอดซื้อวัตถุดิบ (ช่วงนี้)", sum.totalRawMaterialIn],
+    ["ยอดซื้อทั้งหมด (รวมบรรจุภัณฑ์)", sum.totalStockIn],
+    [],
+    ["รายการขายที่บันทึกไว้ (ช่วงนี้)"],
+    ["รหัสรายการ", "วันที่", "Code", "ชื่อรายการขาย", "ช่องทางการจำหน่าย", "จำนวน", "ราคาขายต่อหน่วย", "รวมเงิน", "พนักงาน", "หมายเหตุ"],
+  ];
+  (sum.stockOutList || []).forEach(r => {
+    const d = new Date(r.date);
+    const dateLabel = isNaN(d) ? (r.date || "") : d.toLocaleString("th-TH", {
+      year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit"
+    });
+    rows.push([r.id, dateLabel, r.code || "", r.itemName || "", r.channel || "", r.qty, r.sellPrice, r.total, r.employee || "", r.note || ""]);
+  });
+  downloadCSV(`สรุปยอด-${sum.period}.csv`, rows);
+});
 
 // แสดงรายการขายทีละแถวของช่วงที่เลือก (รายวัน/รายเดือน) ให้ไล่เช็คได้ว่า
 // รายการขายที่เกิดขึ้นจริงบันทึกลงระบบครบหรือยัง — ใหม่สุดอยู่บนสุด
@@ -958,25 +1031,82 @@ function renderSummaryStockOutList(list) {
 }
 
 // ============================================================
-// STATS VIEW (สถิติ) — รายการขายดีที่สุดของเดือนปัจจุบัน
-// backend กรองเฉพาะเดือนนี้ให้เองแล้ว (ดู getSalesStats ใน Code.gs) หน้านี้
-// แค่แสดงผล ไม่มีตัวเลือกช่วงวันที่ให้เลือกเอง เพราะออกแบบให้รีเซ็ตอัตโนมัติ
-// ทุกเดือนตามที่ต้องการ
+// STATS VIEW (สถิติ) — รายการขายดีที่สุดของเดือนที่กำลังดูอยู่
+// ค่าเริ่มต้นเมื่อเปิดหน้านี้ครั้งแรก (statsViewMonth = null) ยังคงเป็น
+// "เดือนปัจจุบัน" เหมือนเดิมทุกประการ ไม่กระทบพฤติกรรมเดิม — ปุ่ม
+// "‹ เดือนก่อน" / "เดือนถัดไป ›" ใช้เพื่อย้อนดูเดือนก่อนๆ ได้เพิ่มเติม
+// เท่านั้น (กดปุ่ม "เดือนถัดไป" เกินเดือนปัจจุบันไม่ได้ กันเผลอไปดูเดือน
+// ที่ยังไม่มีข้อมูล)
+let statsViewMonth = null;     // Date ของวันที่ 1 ในเดือนที่กำลังดู, null = ให้ backend เลือกเดือนปัจจุบันเอง
+let statsLastItems = [];       // รายการล่าสุดที่โหลดมาแสดง ใช้ตอนกด Export
+let statsLastMonthLabel = "";  // ป้ายชื่อเดือน (yyyy-MM) ล่าสุด ใช้ตั้งชื่อไฟล์ Export
+
+function monthParam(d) {
+  return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0");
+}
+
 async function loadStats() {
   const label = document.getElementById("stats-month-label");
   const wrap = document.getElementById("stats-list");
   try {
-    const res = await apiGet("getSalesStats");
+    const params = statsViewMonth ? { month: monthParam(statsViewMonth) } : {};
+    const res = await apiGet("getSalesStats", params);
     const parts = String(res.month || "").split("-").map(Number);
     if (parts.length === 2 && parts[0] && parts[1]) {
       const d = new Date(parts[0], parts[1] - 1, 1);
-      label.textContent = "เดือน " + d.toLocaleDateString("th-TH", { month: "long", year: "numeric" }) + " — ขึ้นเดือนใหม่ตัวเลขจะเริ่มนับใหม่ให้เองอัตโนมัติ";
+      statsViewMonth = d; // sync กับเดือนที่ backend ตอบกลับจริง (โหลดครั้งแรกยังไม่รู้ว่าเดือนปัจจุบันคือเดือนไหนจนกว่าจะได้คำตอบ)
+      statsLastMonthLabel = res.month;
+      const now = new Date();
+      const isCurrent = d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
+      label.textContent = "เดือน " + d.toLocaleDateString("th-TH", { month: "long", year: "numeric" }) +
+        (isCurrent ? " — ขึ้นเดือนใหม่ตัวเลขจะเริ่มนับใหม่ให้เองอัตโนมัติ" : "");
     }
-    renderStatsList(res.items || []);
+    statsLastItems = res.items || [];
+    renderStatsList(statsLastItems);
+    updateStatsNavButtons();
   } catch (err) {
     wrap.innerHTML = '<div class="empty-state">โหลดสถิติไม่สำเร็จ</div>';
   }
 }
+
+// ปิดปุ่ม "เดือนถัดไป" เมื่อดูถึงเดือนปัจจุบันแล้ว (ไปเดือนอนาคตไม่ได้ เพราะ
+// ยังไม่มีข้อมูลขาย) ปุ่ม "เดือนก่อน" เปิดให้กดย้อนได้เรื่อยๆ ไม่จำกัด
+function updateStatsNavButtons() {
+  const nextBtn = document.getElementById("stats-next-month");
+  const now = new Date();
+  const isCurrent = statsViewMonth &&
+    statsViewMonth.getFullYear() === now.getFullYear() &&
+    statsViewMonth.getMonth() === now.getMonth();
+  nextBtn.disabled = !!isCurrent;
+  nextBtn.style.opacity = isCurrent ? "0.4" : "1";
+}
+
+document.getElementById("stats-prev-month").addEventListener("click", () => {
+  const base = statsViewMonth || new Date();
+  statsViewMonth = new Date(base.getFullYear(), base.getMonth() - 1, 1);
+  loadStats();
+});
+document.getElementById("stats-next-month").addEventListener("click", () => {
+  const base = statsViewMonth || new Date();
+  const now = new Date();
+  const next = new Date(base.getFullYear(), base.getMonth() + 1, 1);
+  const isFuture = next.getFullYear() > now.getFullYear() ||
+    (next.getFullYear() === now.getFullYear() && next.getMonth() > now.getMonth());
+  if (isFuture) return; // กันไปดูเดือนอนาคต
+  statsViewMonth = next;
+  loadStats();
+});
+
+// Export หน้า "สถิติ" เป็น CSV — ใช้รายการของเดือนที่กำลังดูอยู่ตอนนี้
+// (statsLastItems) ไม่ว่าจะเป็นเดือนปัจจุบันหรือเดือนก่อนหน้าที่เลือกไว้
+document.getElementById("stats-export-btn").addEventListener("click", () => {
+  if (!statsLastItems.length) return toast("ยังไม่มีข้อมูลให้ Export", true);
+  const rows = [["อันดับ", "ชื่อรายการขาย", "ขายได้ (หน่วย)", "ยอดขาย (บาท)"]];
+  statsLastItems.forEach((item, idx) => {
+    rows.push([idx + 1, item.itemName, item.qty, item.total]);
+  });
+  downloadCSV(`สถิติ-${statsLastMonthLabel || "เดือนนี้"}.csv`, rows);
+});
 
 function renderStatsList(items) {
   const wrap = document.getElementById("stats-list");

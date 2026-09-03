@@ -302,6 +302,10 @@
           <div class="field"><label>ถึงวันที่</label><input type="date" id="summary-end-date"></div>
         </div>
 
+        <div style="display:flex; justify-content:flex-end; margin:2px 0 12px">
+          <button class="btn outline" type="button" id="summary-export-btn">⬇ Export (CSV)</button>
+        </div>
+
         <div class="profit-compare">
           <div class="profit-box accurate" style="grid-column:1/-1">
             <div class="t">กำไรโดยประมาณ</div>
@@ -332,7 +336,17 @@
       <!-- ---- STATS (สถิติ) ---- -->
       <section data-view="stats" class="hidden">
         <h2 class="view-title">สถิติ</h2>
-        <div class="hint" id="stats-month-label" style="margin:-6px 0 10px"></div>
+
+        <div class="field-row" style="align-items:center; gap:10px; margin:-2px 0 4px">
+          <button class="btn outline" type="button" id="stats-prev-month" style="flex:0 0 auto; padding:8px 16px">‹ เดือนก่อน</button>
+          <div class="hint" id="stats-month-label" style="margin:0; flex:1; text-align:center"></div>
+          <button class="btn outline" type="button" id="stats-next-month" style="flex:0 0 auto; padding:8px 16px">เดือนถัดไป ›</button>
+        </div>
+
+        <div style="display:flex; justify-content:flex-end; margin:2px 0 12px">
+          <button class="btn outline" type="button" id="stats-export-btn">⬇ Export (CSV)</button>
+        </div>
+
         <div class="section-label">รายการขายดีที่สุด (เรียงตามจำนวนที่ขายได้)</div>
         <div class="card" id="stats-list"><div class="empty-state">กำลังโหลด…</div></div>
       </section>
