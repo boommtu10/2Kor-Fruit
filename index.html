@@ -337,13 +337,14 @@
       <section data-view="stats" class="hidden">
         <h2 class="view-title">สถิติ</h2>
 
-        <div class="field-row" style="align-items:center; gap:10px; margin:-2px 0 4px">
-          <button class="btn outline" type="button" id="stats-prev-month" style="flex:0 0 auto; padding:8px 16px">‹ เดือนก่อน</button>
-          <div class="hint" id="stats-month-label" style="margin:0; flex:1; text-align:center"></div>
-          <button class="btn outline" type="button" id="stats-next-month" style="flex:0 0 auto; padding:8px 16px">เดือนถัดไป ›</button>
+        <div class="hint" id="stats-month-label" style="text-align:center; font-weight:600; margin:-2px 0 10px"></div>
+
+        <div class="field-row" style="margin-bottom:4px">
+          <div class="field"><button class="btn outline" type="button" id="stats-prev-month">‹ เดือนก่อน</button></div>
+          <div class="field"><button class="btn outline" type="button" id="stats-next-month">เดือนถัดไป ›</button></div>
         </div>
 
-        <div style="display:flex; justify-content:flex-end; margin:2px 0 12px">
+        <div style="display:flex; justify-content:flex-end; margin:6px 0 12px">
           <button class="btn outline" type="button" id="stats-export-btn">⬇ Export (CSV)</button>
         </div>
 
