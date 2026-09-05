@@ -904,11 +904,16 @@ async function loadDashboard() {
 let currentPeriod = "day";
 let lastSummary = null; // ผลลัพธ์ getSummary ล่าสุดที่โหลดมา ใช้ตอนกด Export (ไม่ต้องยิง API ซ้ำ)
 
-// สลับว่าจะโชว์ช่องวันที่เดี่ยว (รายวัน/รายเดือน) หรือช่องจากวัน-ถึงวัน (ช่วงวันที่)
-// ตามปุ่มที่กำลังเลือกอยู่ ไม่ต้องรอ loadSummary ทำงานเสร็จก่อนค่อยสลับ UI
+// สลับว่าจะโชว์ช่องไหน: "รายวัน" ใช้ input type=date เลือกได้ทีละวัน,
+// "รายเดือน" ใช้ input type=month เลือกได้ทีละเดือน (browser จะมีปุ่มเลื่อน
+// เดือนก่อน-หลังให้เองในตัว ไม่ต้องเลือกวันที่แล้วมานั่งเดาว่าอยู่เดือนไหน
+// แบบเดิม), "ช่วงวันที่" ใช้ช่องจากวัน-ถึงวัน
 function updateSummaryDateInputs() {
+  const isDay = currentPeriod === "day";
+  const isMonth = currentPeriod === "month";
   const isRange = currentPeriod === "range";
-  document.getElementById("summary-date-wrap").classList.toggle("hidden", isRange);
+  document.getElementById("summary-date-wrap").classList.toggle("hidden", !isDay);
+  document.getElementById("summary-month-wrap").classList.toggle("hidden", !isMonth);
   document.getElementById("summary-range-wrap").classList.toggle("hidden", !isRange);
 }
 
@@ -922,15 +927,19 @@ document.querySelectorAll(".toggle-group [data-period]").forEach(btn => {
   });
 });
 document.getElementById("summary-date").addEventListener("change", loadSummary);
+document.getElementById("summary-month").addEventListener("change", loadSummary);
 document.getElementById("summary-start-date").addEventListener("change", loadSummary);
 document.getElementById("summary-end-date").addEventListener("change", loadSummary);
 
 async function loadSummary() {
   const dateInput = document.getElementById("summary-date");
+  const monthInput = document.getElementById("summary-month");
   const startInput = document.getElementById("summary-start-date");
   const endInput = document.getElementById("summary-end-date");
   const todayStr = new Date().toISOString().slice(0, 10);
+  const thisMonthStr = todayStr.slice(0, 7); // yyyy-MM
   if (!dateInput.value) dateInput.value = todayStr;
+  if (!monthInput.value) monthInput.value = thisMonthStr;
 
   // โหมด "ช่วงวันที่" ต้องส่ง startDate/endDate ไป backend แทน date เดี่ยว ๆ
   // ถ้าผู้ใช้เผลอเลือกวันเริ่มมาหลังวันสิ้นสุด สลับให้อัตโนมัติ กันข้อมูลว่างเปล่า
@@ -945,6 +954,11 @@ async function loadSummary() {
     }
     params.startDate = startInput.value;
     params.endDate = endInput.value;
+  } else if (currentPeriod === "month") {
+    // input type=month ให้ค่ากลับมาแค่ "yyyy-MM" (ไม่มีวันที่) ต้องเติม
+    // "-01" ต่อท้ายเอง backend จะเอาไปหาว่าอยู่เดือน/ปีไหนแล้วคำนวณทั้ง
+    // เดือนให้เองอยู่แล้ว (ดู getSummary ใน Code.gs) ไม่สนใจว่าเป็นวันที่เท่าไหร่
+    params.date = monthInput.value + "-01";
   } else {
     params.date = dateInput.value;
   }
