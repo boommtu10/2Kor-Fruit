@@ -43,7 +43,13 @@ self.addEventListener("fetch", (event) => {
       caches.match(event.request).then((cached) => {
         const fetchPromise = fetch(event.request)
           .then((res) => {
-            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, res.clone()));
+            // แก้บั๊ก: ต้อง clone() "ทันที" ที่ได้ res มา ก่อนที่จะ return
+            // ออกไปให้หน้าเว็บอ่าน เพราะ Response อ่านได้แค่ครั้งเดียว
+            // ถ้า return res ออกไปก่อนแล้วค่อย clone ทีหลัง (แบบเดิม)
+            // มีโอกาสที่หน้าเว็บอ่าน body ไปแล้วก่อน clone() จะทำงาน
+            // ทำให้พังด้วย error "Response body is already used"
+            const resToCache = res.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, resToCache));
             return res;
           })
           .catch(() => cached);
