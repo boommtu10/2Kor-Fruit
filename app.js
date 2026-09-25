@@ -868,6 +868,7 @@ function openMenuModal(menu) {
   document.getElementById("modal-menu-title").textContent = menu ? "แก้ไขเมนูขาย" : "เพิ่มเมนูขาย";
   document.getElementById("menu-submit-btn").textContent = menu ? "บันทึกการแก้ไข" : "บันทึกเมนู";
   document.getElementById("menu-name").value = menu ? menu.name : "";
+  document.getElementById("menu-packaging").value = menu ? (menu.packaging || "") : "";
   document.getElementById("menu-price-front").value = (menu && menu.priceFront !== "" && menu.priceFront !== undefined) ? menu.priceFront : "";
   document.getElementById("menu-price-januan").value = (menu && menu.priceJanuan !== "" && menu.priceJanuan !== undefined) ? menu.priceJanuan : "";
   document.getElementById("menu-price-lineman").value = (menu && menu.priceLineman !== "" && menu.priceLineman !== undefined) ? menu.priceLineman : "";
@@ -889,6 +890,7 @@ document.getElementById("form-add-menu").addEventListener("submit", async (e) =>
   e.preventDefault();
   const menuId = document.getElementById("menu-id").value;
   const name = document.getElementById("menu-name").value.trim();
+  const packaging = document.getElementById("menu-packaging").value.trim();
   const category = document.getElementById("menu-category").value;
   if (!category) return toast("กรุณาเลือกหมวด", true);
   const codeId = document.getElementById("menu-code").value;
@@ -900,7 +902,7 @@ document.getElementById("form-add-menu").addEventListener("submit", async (e) =>
   const orderVal = document.getElementById("menu-order").value;
 
   const payload = {
-    name, category,
+    name, packaging, category,
     priceFront: priceFrontVal, priceJanuan: priceJanuanVal, priceLineman: priceLinemanVal,
     codeId, image: state.menuImageDataUrl || ""
   };
@@ -953,7 +955,7 @@ function renderMenusAdminList() {
     row.innerHTML = `
       ${m.image ? `<img src="${m.image}" alt="">` : `<div class="ph">🍉</div>`}
       <div class="info">
-        <div class="title">${m.name}</div>
+        <div class="title">${m.displayName}</div>
         <div class="sub">${m.category || "-"} · ${code ? code.name : "(ไม่พบ Code นี้แล้ว)"} · ${priceText}</div>
         <div class="sub ${m.status === "hidden" ? "hidden-badge" : ""}">${m.status === "hidden" ? "ซ่อนอยู่" : "แสดงอยู่ในหน้าขาย"} · ลำดับ ${m.order}</div>
       </div>
@@ -1074,7 +1076,7 @@ function buildSalesMenuTile(m) {
   tile.innerHTML = `
     <button type="button" class="sm-menu-btn">
       ${m.image ? `<img src="${m.image}" alt="">` : `<div class="ph">🍉</div>`}
-      <div class="nm">${m.name}</div>
+      <div class="nm">${m.displayName}</div>
     </button>
     <div class="sm-tile-expand hidden">
       <button type="button" class="sm-tile-close" title="ยกเลิก">✕</button>
@@ -1201,7 +1203,7 @@ function renderSaleSummaryList(items) {
       const total = computeSaleTotal(p.qty, p.price, state.salesChannel);
       return `
       <div class="list-row">
-        <div class="main"><div class="title">${p.menu.name}</div><div class="sub">${state.salesChannel} · ${p.qty} x ${money(p.price)}</div></div>
+        <div class="main"><div class="title">${p.menu.displayName}</div><div class="sub">${state.salesChannel} · ${p.qty} x ${money(p.price)}</div></div>
         <div class="trail">${money(total)}</div>
       </div>`;
     })
@@ -1244,7 +1246,7 @@ document.getElementById("btn-confirm-sale-summary").addEventListener("click", as
     const code = state.codes.find((c) => c.id === p.menu.codeId);
     const packaging = code ? code.packaging.map((x) => ({ productId: x.productId, qty: x.qty })) : [];
     const res = await apiPost("stockOut", {
-      itemName: p.menu.name,
+      itemName: p.menu.displayName,
       code: code ? code.name : "",
       channel: state.salesChannel,
       qty: p.qty,
@@ -1267,7 +1269,7 @@ document.getElementById("btn-confirm-sale-summary").addEventListener("click", as
   state.pendingSaleItems = null;
 
   if (failed.length) {
-    toast(`บันทึกไม่สำเร็จ ${failed.length} รายการ (${failed.map((f) => f.menu.name).join(", ")}) — รายการที่เหลือบันทึกให้แล้ว แก้ไขแล้วกดยืนยันใหม่ได้`, true);
+    toast(`บันทึกไม่สำเร็จ ${failed.length} รายการ (${failed.map((f) => f.menu.displayName).join(", ")}) — รายการที่เหลือบันทึกให้แล้ว แก้ไขแล้วกดยืนยันใหม่ได้`, true);
   } else {
     toast(lowStockAll.size ? `บันทึกแล้ว — บรรจุภัณฑ์ใกล้หมด: ${[...lowStockAll].join(", ")}` : "บันทึกการขายเรียบร้อย");
   }

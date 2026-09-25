@@ -516,12 +516,17 @@
         <div class="mm-image-picker">
           <img id="menu-image-preview" class="mm-image-preview hidden" alt="ตัวอย่างรูปเมนู">
           <div class="mm-image-placeholder" id="menu-image-placeholder">ยังไม่มีรูป</div>
-          <input type="file" id="menu-image-file" accept="image/*" capture="environment">
+          <input type="file" id="menu-image-file" accept="image/*">
           <button type="button" class="btn outline hidden" id="btn-remove-menu-image">ลบรูป</button>
         </div>
         <div class="hint" id="menu-image-hint">เลือกรูปจากเครื่อง ระบบจะย่อขนาดให้อัตโนมัติ</div>
       </div>
       <div class="field"><label>ชื่อเมนู</label><input type="text" id="menu-name" maxlength="60" required></div>
+      <div class="field">
+        <label>ป้ายบรรจุภัณฑ์ (ไม่ใส่ก็ได้ — ใส่เมื่อผลไม้ชนิดนี้มีหลายขนาด เช่น 500ml.)</label>
+        <input type="text" id="menu-packaging" maxlength="30" placeholder="เช่น 500ml.">
+        <div class="hint">ตั้งชื่อเมนูเหมือนเดิมได้ (เช่น "องุ่นไซมัสกัส") ไม่ต้องพิมพ์ขนาดต่อท้ายชื่อเอง ใส่แค่ตรงนี้ ระบบจะต่อท้ายให้อัตโนมัติเป็น "องุ่นไซมัสกัส (500ml.)" ในหน้าขาย</div>
+      </div>
       <div class="field">
         <label>หมวด</label>
         <select id="menu-category" required></select>
