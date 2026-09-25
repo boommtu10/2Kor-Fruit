@@ -565,9 +565,10 @@
   <div class="modal-sheet">
     <button class="modal-close" data-close-modal="modal-sale-summary">✕</button>
     <h3>สรุปรายการขาย</h3>
-    <div class="list-row">
-      <div class="main"><div class="title" id="summary-item-name">—</div><div class="sub" id="summary-item-sub"></div></div>
-      <div class="trail" id="summary-item-total">฿0</div>
+    <div id="summary-items-list"></div>
+    <div class="list-row" style="border-top:1.5px solid #e7e2d6;margin-top:6px;padding-top:10px">
+      <div class="main title">รวมทั้งหมด</div>
+      <div class="trail" id="summary-grand-total">฿0</div>
     </div>
     <div style="display:flex;gap:10px;margin-top:16px">
       <button type="button" class="btn outline" id="btn-summary-back" style="flex:1">ย้อนกลับแก้ไข</button>

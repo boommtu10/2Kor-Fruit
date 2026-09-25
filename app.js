@@ -16,7 +16,7 @@ const state = {
   menuCategories: [],    // รายชื่อหมวดเมนู (โหลดครั้งเดียวตอนเปิดแอป)
   salesMenus: [],        // เมนูขายเฉพาะที่ "แสดง" — ใช้ในหน้าโหมดขาย
   salesChannel: "",      // ช่องทางที่เลือกไว้ในหน้าโหมดขาย (เลือกครั้งเดียวต่อรอบ)
-  pendingSale: null,     // รายการที่กำลังรอยืนยันใน modal-sale-summary {tile, menu, qty, price}
+  pendingSaleItems: null, // รายการทั้งหมดที่กำลังรอยืนยันใน modal-sale-summary [{tile, menu, qty, price}, ...]
   menuImageDataUrl: "",  // รูปที่เลือก/ย่อแล้ว รอบันทึกในฟอร์มเพิ่ม/แก้ไขเมนู
 };
 
@@ -190,7 +190,7 @@ function logout() {
   localStorage.removeItem("2kor_employee");
   state.employee = null;
   state.pin = "";
-  state.pendingSale = null;
+  state.pendingSaleItems = null;
   renderPinDots();
   hideAllScreens();
   document.getElementById("login-screen").classList.remove("hidden");
@@ -1150,7 +1150,7 @@ document.getElementById("sm-menu-grid").addEventListener("click", (e) => {
   if (closeBtn) { collapseSaleTile(closeBtn.closest(".sm-tile")); return; }
 
   const confirmBtn = e.target.closest(".sm-tile-confirm");
-  if (confirmBtn) { openTileSaleSummary(confirmBtn.closest(".sm-tile")); return; }
+  if (confirmBtn) { openSaleSummary(); return; }
 
   const menuBtn = e.target.closest(".sm-menu-btn");
   if (menuBtn) {
@@ -1165,52 +1165,114 @@ document.getElementById("sm-menu-grid").addEventListener("input", (e) => {
   if (e.target.classList.contains("sm-tile-qty") || e.target.classList.contains("sm-tile-price")) hideTileError(tile);
 });
 
-// กด "ยืนยันการขาย" บนการ์ด -> ตรวจให้ครบก่อน แล้วเปิด popup สรุป 1 รายการ
-// ให้ยืนยันอีกครั้ง (กันกดพลาด/เลขผิดตอนรีบๆ) การบันทึกจริงเกิดขึ้นตอนกด
-// "บันทึกการขาย" ใน popup เท่านั้น
-function openTileSaleSummary(tile) {
-  const qty = tile.querySelector(".sm-tile-qty").value;
-  const price = tile.querySelector(".sm-tile-price").value;
-  if (!(Number(qty) > 0)) { showTileError(tile, "กรุณาใส่จำนวน"); return; }
-  if (price === "") { showTileError(tile, "กรุณาใส่ราคา (ใส่ 0 ได้ถ้าแจกฟรี)"); return; }
-  const menu = state.salesMenus.find(m => m.id === tile.dataset.menuId);
-  if (!menu) return;
-  state.pendingSale = { tile, menu, qty, price };
+// รวบรวมทุกการ์ดที่กำลังเปิดอยู่ (ไม่ว่าจะเปิดไว้กี่ใบพร้อมกัน) และกรอกจำนวน
+// ไว้แล้ว มาเป็นรายการเดียวกัน ไม่ใช่แค่ใบที่กด "ยืนยันการขาย" — เพราะพนักงาน
+// มักเปิดหลายใบพร้อมกันตอนลูกค้าซื้อหลายอย่างในบิลเดียว แล้วค่อยมากดยืนยัน
+// รวดเดียวตอนคิดเงิน ใบที่เปิดไว้แต่ยังไม่ได้กรอกจำนวนเลย (แค่เปิดดูเฉยๆ)
+// จะไม่ถูกนับเข้ามา ส่วนใบที่กรอกจำนวนแล้วแต่ลืมใส่ราคา จะโชว์ error ในใบนั้น
+// และ "บล็อก" ไม่ให้เปิดหน้าสรุปจนกว่าจะแก้ไขให้ครบทุกใบก่อน
+function collectPendingSaleItems() {
+  const items = [];
+  let blocked = false;
+  document.querySelectorAll("#sm-menu-grid .sm-tile").forEach((tile) => {
+    const expand = tile.querySelector(".sm-tile-expand");
+    if (expand.classList.contains("hidden")) return; // ยังไม่เปิด ไม่นับ
+    const qty = tile.querySelector(".sm-tile-qty").value;
+    if (!(qty !== "" && Number(qty) > 0)) return; // เปิดดูเฉยๆ ยังไม่กรอกจำนวน ไม่นับ
+    hideTileError(tile);
+    const price = tile.querySelector(".sm-tile-price").value;
+    const menu = state.salesMenus.find((m) => m.id === tile.dataset.menuId);
+    if (!menu) return;
+    if (price === "") {
+      showTileError(tile, "กรุณาใส่ราคา (ใส่ 0 ได้ถ้าแจกฟรี)");
+      blocked = true;
+      return;
+    }
+    items.push({ tile, menu, qty, price });
+  });
+  return { items, blocked };
+}
 
-  document.getElementById("summary-item-name").textContent = menu.name;
-  document.getElementById("summary-item-sub").textContent = `${state.salesChannel} · ${qty} x ${money(price)}`;
-  document.getElementById("summary-item-total").textContent = money(computeSaleTotal(qty, price, state.salesChannel));
+// วาดรายการทั้งหมดในหน้าสรุป (ทีละใบ + ยอดรวมทั้งหมดด้านล่าง)
+function renderSaleSummaryList(items) {
+  const wrap = document.getElementById("summary-items-list");
+  wrap.innerHTML = items
+    .map((p) => {
+      const total = computeSaleTotal(p.qty, p.price, state.salesChannel);
+      return `
+      <div class="list-row">
+        <div class="main"><div class="title">${p.menu.name}</div><div class="sub">${state.salesChannel} · ${p.qty} x ${money(p.price)}</div></div>
+        <div class="trail">${money(total)}</div>
+      </div>`;
+    })
+    .join("");
+  const grand = items.reduce((sum, p) => sum + computeSaleTotal(p.qty, p.price, state.salesChannel), 0);
+  document.getElementById("summary-grand-total").textContent = money(grand);
+}
+
+// กด "ยืนยันการขาย" บนการ์ดใบไหนก็ได้ -> รวบรวมทุกใบที่เปิดและกรอกจำนวนไว้
+// แล้วทั้งหมด มาสรุปรวมเป็น popup เดียว ให้ยืนยันอีกครั้งก่อนบันทึกจริง (กัน
+// กดพลาด/เลขผิดตอนรีบๆ) การบันทึกจริงเกิดขึ้นตอนกด "บันทึกการขาย" ใน popup
+// เท่านั้น
+function openSaleSummary() {
+  const { items, blocked } = collectPendingSaleItems();
+  if (blocked) return; // มีบางใบไม่ได้ใส่ราคา ให้แก้ก่อน (โชว์ error ในใบนั้นแล้ว)
+  if (!items.length) return; // ไม่ควรเกิด เพราะปุ่มโผล่เฉพาะตอนกรอกจำนวนในใบนั้นแล้ว
+
+  state.pendingSaleItems = items;
+  renderSaleSummaryList(items);
   openModal("modal-sale-summary");
 }
 document.getElementById("btn-summary-back").addEventListener("click", () => closeModal("modal-sale-summary"));
 
+// บันทึกทีละรายการเรียงตามลำดับ (รอผลของอันก่อนหน้าก่อนเริ่มอันถัดไป) แทนที่
+// จะยิงพร้อมกันทั้งหมด เพื่อไม่ให้ชนคิวกันเองฝั่งเซิร์ฟเวอร์โดยไม่จำเป็น ถ้า
+// บางรายการบันทึกไม่สำเร็จ (เช่น เน็ตหลุดกลางทาง) รายการที่สำเร็จไปแล้วจะถูก
+// ปิดการ์ดให้เรียบร้อย ส่วนรายการที่พลาดจะโชว์ error ค้างไว้ในการ์ดนั้นให้กด
+// ยืนยันใหม่อีกครั้งได้ ไม่ต้องกรอกใหม่ทั้งหมด
 document.getElementById("btn-confirm-sale-summary").addEventListener("click", async () => {
-  const p = state.pendingSale;
-  if (!p) return;
+  const items = state.pendingSaleItems;
+  if (!items || !items.length) return;
   const btn = document.getElementById("btn-confirm-sale-summary");
+  const backBtn = document.getElementById("btn-summary-back");
   btn.disabled = true;
-  const code = state.codes.find(c => c.id === p.menu.codeId);
-  const packaging = code ? code.packaging.map(x => ({ productId: x.productId, qty: x.qty })) : [];
-  const res = await apiPost("stockOut", {
-    itemName: p.menu.name,
-    code: code ? code.name : "",
-    channel: state.salesChannel,
-    qty: p.qty,
-    sellPrice: p.price,
-    packaging,
-    employee: state.employee.name,
-  });
-  btn.disabled = false;
-  if (res.ok) {
-    closeModal("modal-sale-summary");
-    collapseSaleTile(p.tile);
-    toast((res.lowStock && res.lowStock.length) ? `บันทึกแล้ว — บรรจุภัณฑ์ใกล้หมด: ${res.lowStock.join(", ")}` : "บันทึกการขายเรียบร้อย");
-  } else {
-    closeModal("modal-sale-summary");
-    showTileError(p.tile, res.error || "บันทึกไม่สำเร็จ");
+  backBtn.disabled = true;
+
+  const lowStockAll = new Set();
+  const failed = [];
+  for (const p of items) {
+    const code = state.codes.find((c) => c.id === p.menu.codeId);
+    const packaging = code ? code.packaging.map((x) => ({ productId: x.productId, qty: x.qty })) : [];
+    const res = await apiPost("stockOut", {
+      itemName: p.menu.name,
+      code: code ? code.name : "",
+      channel: state.salesChannel,
+      qty: p.qty,
+      sellPrice: p.price,
+      packaging,
+      employee: state.employee.name,
+    });
+    if (res.ok) {
+      collapseSaleTile(p.tile);
+      (res.lowStock || []).forEach((x) => lowStockAll.add(x));
+    } else {
+      failed.push({ menu: p.menu, error: res.error || "บันทึกไม่สำเร็จ" });
+      showTileError(p.tile, res.error || "บันทึกไม่สำเร็จ");
+    }
   }
-  state.pendingSale = null;
+
+  btn.disabled = false;
+  backBtn.disabled = false;
+  closeModal("modal-sale-summary");
+  state.pendingSaleItems = null;
+
+  if (failed.length) {
+    toast(`บันทึกไม่สำเร็จ ${failed.length} รายการ (${failed.map((f) => f.menu.name).join(", ")}) — รายการที่เหลือบันทึกให้แล้ว แก้ไขแล้วกดยืนยันใหม่ได้`, true);
+  } else {
+    toast(lowStockAll.size ? `บันทึกแล้ว — บรรจุภัณฑ์ใกล้หมด: ${[...lowStockAll].join(", ")}` : "บันทึกการขายเรียบร้อย");
+  }
 });
+
 
 
 // ============================================================
