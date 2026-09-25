@@ -8,15 +8,15 @@ const state = {
   pin: "",
   products: [],
   employees: [],
-  packaging: [],       // บรรจุภัณฑ์ที่ยัง active ใช้ในหน้าขาย
-  codes: [],            // Code บรรจุภัณฑ์ที่ตั้งไว้ล่วงหน้า (ดูหน้าบันทึกการขาย)
+  codes: [],            // Code บรรจุภัณฑ์ที่ตั้งไว้ล่วงหน้า (ดู "จัดการ Code" + โหมดขาย)
   adjustTarget: null,   // สินค้าที่กำลังจะปรับคงเหลือ {id, name, stock, unit}
   lowStockList: [],     // รายการสินค้าใกล้หมดล่าสุด (ดึงครั้งเดียว ใช้ทั้งการ์ดหน้าหลัก
                          // และหน้า "ดูทั้งหมด" กันยิง API ซ้ำโดยไม่จำเป็น)
   menus: [],             // เมนูขายทั้งหมด รวมที่ซ่อนไว้ — ใช้ในหลังบ้าน (จัดการเมนูขาย)
+  menuCategories: [],    // รายชื่อหมวดเมนู (โหลดครั้งเดียวตอนเปิดแอป)
   salesMenus: [],        // เมนูขายเฉพาะที่ "แสดง" — ใช้ในหน้าโหมดขาย
   salesChannel: "",      // ช่องทางที่เลือกไว้ในหน้าโหมดขาย (เลือกครั้งเดียวต่อรอบ)
-  activeSaleMenu: null,  // เมนูที่กำลังจะบันทึกการขาย (อยู่ระหว่างเปิด modal-sale-item)
+  pendingSale: null,     // รายการที่กำลังรอยืนยันใน modal-sale-summary {tile, menu, qty, price}
   menuImageDataUrl: "",  // รูปที่เลือก/ย่อแล้ว รอบันทึกในฟอร์มเพิ่ม/แก้ไขเมนู
 };
 
@@ -26,7 +26,7 @@ const STOCK_GROUP_VIEWS = ["products", "stockcut"];
 // กลุ่มเมนู "บันทึกขาย" — แยก "จัดการ Code" ออกมาเป็นหน้าย่อยต่างหาก ไม่ให้
 // อยู่บนหน้าบันทึกขายเหมือนเดิม เพราะรายการ Code ที่ยาวขึ้นเรื่อยๆ จะดันฟอร์ม
 // บันทึกขายให้ตกลงไปด้านล่าง กรอกข้อมูลไม่สะดวก
-const SALES_GROUP_VIEWS = ["stockout", "codes", "menus"];
+const SALES_GROUP_VIEWS = ["codes", "menus"];
 // รวมทุกกลุ่มเมนูไว้ที่เดียว เผื่อมีกลุ่มเพิ่มในอนาคตแค่มาต่อ array ตรงนี้พอ
 const SIDEBAR_GROUPS = [
   { id: "group-stock", views: STOCK_GROUP_VIEWS },
@@ -177,6 +177,7 @@ function logout() {
   localStorage.removeItem("2kor_employee");
   state.employee = null;
   state.pin = "";
+  state.pendingSale = null;
   renderPinDots();
   hideAllScreens();
   document.getElementById("login-screen").classList.remove("hidden");
@@ -232,7 +233,6 @@ function goToView(name) {
   if (name === "dashboard") loadDashboard();
   if (name === "products") renderProductsList();
   if (name === "stockcut") { /* selects already filled via fillProductSelects */ }
-  if (name === "stockout") { loadPackagingOptions(); loadSaleItemNames(); loadCodes(); }
   if (name === "codes") loadCodes();
   if (name === "menus") loadMenusAdmin();
   if (name === "summary") loadSummary();
@@ -567,28 +567,13 @@ document.getElementById("form-stockcut").addEventListener("submit", async (e) =>
 });
 
 // ============================================================
-// STOCK OUT — พิมพ์ชื่อรายการ + ราคาเอง แล้วเลือกบรรจุภัณฑ์ที่ใช้
+// STOCK OUT (ตัดสต๊อกบรรจุภัณฑ์ตอนขาย) — ใช้ร่วมกับหน้า "จัดการ Code"
+// และหน้าโหมดขาย (ดูส่วนท้ายไฟล์) ตัวฟอร์มกรอกเองแบบเดิมถูกเอาออกไปแล้ว
+// เพราะตอนนี้การขายจริงทำผ่านโหมดขายเท่านั้น (ดู หน้าจัดการเมนูขาย +
+// โหมดขาย ด้านล่าง) ฟังก์ชันที่เหลือในส่วนนี้ยังใช้ร่วมกับ "จัดการ Code"
 // ============================================================
-// โหลดชื่อรายการขายที่เคยพิมพ์บันทึกไว้แล้ว มาเติมเป็นตัวเลือกใน <datalist>
-// ที่ผูกกับช่อง "ชื่อรายการขาย" (out-name) — เป็นดรอปดาวที่ยังพิมพ์ชื่อใหม่
-// เองได้ตามปกติ ถ้าพิมพ์ชื่อไม่ตรงกับในลิสต์เลยสักตัว input จะรับค่าที่พิมพ์
-// ไปใช้ตามปกติ ไม่ได้บังคับว่าต้องเลือกจากลิสต์เท่านั้น
-async function loadSaleItemNames() {
-  try {
-    const names = await apiGet("getSaleItemNames");
-    if (names.error) throw new Error(names.error);
-    const list = document.getElementById("out-name-list");
-    list.innerHTML = "";
-    names.forEach(name => {
-      const opt = document.createElement("option");
-      opt.value = name;
-      list.appendChild(opt);
-    });
-  } catch (err) { /* เงียบไว้ — ต่อให้โหลดไม่สำเร็จ ก็ยังพิมพ์ชื่อเองได้ตามปกติ */ }
-}
 
-// วาด checkbox + ช่องจำนวนของบรรจุภัณฑ์ ใช้ร่วมกัน 2 ที่: รายการที่ใช้จริง
-// ตอนขาย (out-packaging-list) และตอนตั้งค่า Code (code-packaging-list)
+// วาด checkbox + ช่องจำนวนของบรรจุภัณฑ์ — ใช้ตอนตั้งค่า Code (code-packaging-list)
 // เก็บชื่อสินค้าไว้ใน data-pack-name ด้วย เพื่อให้ตอนบันทึก Code เอาชื่อไป
 // ฝังใน Code ได้เลย ไม่ต้องย้อนไปหาใน state.products อีกที (เผื่อสินค้านั้น
 // ถูกปิดใช้งาน/เปลี่ยนชื่อไปแล้วในอนาคต Code เก่าจะยังอ่านชื่อเดิมได้)
@@ -616,16 +601,14 @@ function renderPackagingChecklist(containerId, list, emptyMsg) {
   });
 }
 
-// ติ๊กแล้วเปิดช่องจำนวนให้แก้ไขได้ (ไม่ติ๊ก = ไม่ใช้ ไม่หักสต๊อก) — ผูก event
-// ไว้กับทั้ง 2 ลิสต์ (ขายจริง + ตั้งค่า Code) ใช้ closest(".list-row") กันชนกัน
-// ถ้าบรรจุภัณฑ์ตัวเดียวกันไปโผล่ทั้ง 2 ลิสต์พร้อมกัน
-["out-packaging-list", "code-packaging-list"].forEach(containerId => {
-  document.getElementById(containerId).addEventListener("change", (e) => {
-    if (!e.target.classList.contains("pack-check")) return;
-    const id = e.target.dataset.packId;
-    const qtyInput = e.target.closest(".list-row").querySelector(`.pack-qty[data-pack-id="${id}"]`);
-    if (qtyInput) qtyInput.disabled = !e.target.checked;
-  });
+// ติ๊กแล้วเปิดช่องจำนวนให้แก้ไขได้ (ไม่ติ๊ก = ไม่ใช้ ไม่หักสต๊อก) — ใช้กับ
+// รายการบรรจุภัณฑ์ตอนตั้งค่า Code เท่านั้น (ตอนขายจริงในโหมดขาย ไม่ต้องติ๊ก
+// บรรจุภัณฑ์เอง เพราะหักตาม Code ที่ผูกไว้กับเมนูโดยอัตโนมัติอยู่แล้ว)
+document.getElementById("code-packaging-list").addEventListener("change", (e) => {
+  if (!e.target.classList.contains("pack-check")) return;
+  const id = e.target.dataset.packId;
+  const qtyInput = e.target.closest(".list-row").querySelector(`.pack-qty[data-pack-id="${id}"]`);
+  if (qtyInput) qtyInput.disabled = !e.target.checked;
 });
 
 function collectSelectedPackaging(containerId) {
@@ -636,23 +619,6 @@ function collectSelectedPackaging(containerId) {
     selected.push({ productId: id, qty: Number(qty) || 1, name: chk.dataset.packName || "" });
   });
   return selected;
-}
-
-// โหลดรายการบรรจุภัณฑ์ที่ยัง active มาแสดงเป็น checkbox + ช่องจำนวน ให้
-// พนักงานเลือกเองว่าการขายครั้งนี้ใช้อะไรบ้าง — ใช้เป็น "ทางเลือกสำรอง" เมื่อ
-// ยังไม่ได้เลือก Code เท่านั้น (ถ้าเลือก Code ไว้แล้ว ระบบหักให้อัตโนมัติ
-// ไม่ต้องมาติ๊กเองซ้ำ ดู updateOutCodeUI ด้านล่าง)
-async function loadPackagingOptions() {
-  try {
-    const all = await apiGet("getPackaging");
-    // ไม่โชว์บรรจุภัณฑ์ที่สต๊อกเหลือ 0 ให้เลือกตอนขาย เพราะเลือกไปก็หักสต๊อก
-    // ไม่ได้อยู่ดี (ของไม่พอ) — พอบรรจุภัณฑ์หมดแล้วรับเข้าล็อตใหม่ราคาอาจไม่
-    // เท่าเดิม ระบบจะให้เพิ่มเป็นรายการใหม่แทน จึงไม่ต้องมีตัวเก่าค้างในลิสต์นี้
-    state.packaging = Array.isArray(all) ? all.filter(p => Number(p["สต๊อกปัจจุบัน"]) > 0) : [];
-    renderPackagingChecklist("out-packaging-list", state.packaging, 'ยังไม่มีบรรจุภัณฑ์ที่มีของเหลือ (รับเข้าใหม่ได้ที่เมนู "เพิ่มสินค้า")');
-  } catch (err) {
-    document.getElementById("out-packaging-list").innerHTML = '<div class="empty-state">โหลดบรรจุภัณฑ์ไม่สำเร็จ</div>';
-  }
 }
 
 // รายการบรรจุภัณฑ์สำหรับ "ตั้งค่า Code" — โชว์เฉพาะที่ยังมีของเหลือในสต๊อก
@@ -694,19 +660,8 @@ async function loadCodes() {
   try {
     const codes = await apiGet("getCodes");
     state.codes = Array.isArray(codes) ? codes : [];
-    const sel = document.getElementById("out-code");
-    const cur = sel.value;
-    sel.innerHTML = '<option value="">— ไม่ใช้ Code (เลือกบรรจุภัณฑ์เอง) —</option>';
-    state.codes.forEach(c => {
-      const opt = document.createElement("option");
-      opt.value = c.id;
-      opt.textContent = c.name;
-      sel.appendChild(opt);
-    });
-    if (cur) sel.value = cur;
-    updateOutCodeUI();
     renderCodesList();
-  } catch (err) { /* เงียบไว้ — ยังเลือกบรรจุภัณฑ์เองได้ตามปกติ */ }
+  } catch (err) { /* เงียบไว้ — โหมดขายจะยังพยายามใช้ state.codes เท่าที่มีอยู่เดิม */ }
 }
 
 // รายการ Code ทั้งหมดที่เคยตั้งไว้ พร้อมสรุปว่าผูกกับบรรจุภัณฑ์อะไรบ้าง
@@ -739,24 +694,6 @@ document.getElementById("codes-list").addEventListener("click", (e) => {
   const code = state.codes.find(c => c.id === btn.dataset.codeId);
   if (code) openCodeModal(code);
 });
-
-// เลือก Code แล้ว: ซ่อนช่องติ๊กบรรจุภัณฑ์เอง (เพราะหักให้อัตโนมัติแล้ว)
-// ไม่เลือก Code (ค่าว่าง): โชว์ช่องติ๊กบรรจุภัณฑ์เองแบบเดิมกลับมาเป็นทางเลือกสำรอง
-function updateOutCodeUI() {
-  const sel = document.getElementById("out-code");
-  const section = document.getElementById("out-packaging-section");
-  const hint = document.getElementById("out-code-hint");
-  const code = state.codes.find(c => c.id === sel.value);
-  if (code) {
-    section.classList.add("hidden");
-    const parts = (code.packaging || []).map(p => `${p.name || p.productId} x${p.qty}`);
-    hint.textContent = parts.length ? `จะหักอัตโนมัติ: ${parts.join(", ")}` : "Code นี้ยังไม่ได้ผูกบรรจุภัณฑ์ไว้";
-  } else {
-    section.classList.remove("hidden");
-    hint.textContent = "";
-  }
-}
-document.getElementById("out-code").addEventListener("change", updateOutCodeUI);
 
 // เปิด modal ตั้งค่า Code — code = null คือโหมด "เพิ่มใหม่", ส่ง code object
 // เข้ามาคือโหมด "แก้ไข" (พรีฟิลชื่อ + ติ๊กบรรจุภัณฑ์เดิมกลับให้)
@@ -799,6 +736,16 @@ document.getElementById("form-add-code").addEventListener("submit", async (e) =>
 // เผื่อ margin จากลิมิตฝั่ง Apps Script (ช่องชีตจุได้ 50,000 ตัวอักษร เผื่อไว้
 // ที่ 48,000 ในโค้ดฝั่งเซิร์ฟเวอร์ ฝั่งนี้เผื่อเพิ่มอีกชั้นกันตัวเลขชนกันพอดี)
 const MENU_IMAGE_MAX_CHARS = 46000;
+
+// รายชื่อหมวดเมนูเป็นค่าคงที่ฝั่งเซิร์ฟเวอร์ (ดู MENU_CATEGORIES ใน Code.gs)
+// โหลดครั้งเดียวตอนเปิดแอป ใช้ทั้งดรอปดาวตอนเพิ่ม/แก้ไขเมนู และจัดกลุ่มหัวข้อ
+// ในหน้าโหมดขาย ไม่ฮาร์ดโค้ดซ้ำในไฟล์นี้ กันปัญหาตัวเลขหลุดกันแบบค่าคอม 32.10%
+async function loadMenuCategories() {
+  try {
+    const cats = await apiGet("getMenuCategories");
+    state.menuCategories = Array.isArray(cats) ? cats : [];
+  } catch (err) { state.menuCategories = []; }
+}
 
 function fileToDataURL(file) {
   return new Promise((resolve, reject) => {
@@ -888,6 +835,16 @@ function fillMenuCodeSelect(selectedCodeId) {
   });
   if (selectedCodeId) sel.value = selectedCodeId;
 }
+function fillMenuCategorySelect(selectedCategory) {
+  const sel = document.getElementById("menu-category");
+  sel.innerHTML = "";
+  state.menuCategories.forEach(cat => {
+    const opt = document.createElement("option");
+    opt.value = cat; opt.textContent = cat;
+    sel.appendChild(opt);
+  });
+  if (selectedCategory) sel.value = selectedCategory;
+}
 
 // เปิด modal เพิ่ม/แก้ไขเมนู — menu = null คือโหมด "เพิ่มใหม่" (ลำดับ/สถานะ
 // กำหนดอัตโนมัติฝั่งเซิร์ฟเวอร์ จึงซ่อน 2 ช่องนี้ไว้ตอนเพิ่มใหม่)
@@ -898,10 +855,12 @@ function openMenuModal(menu) {
   document.getElementById("modal-menu-title").textContent = menu ? "แก้ไขเมนูขาย" : "เพิ่มเมนูขาย";
   document.getElementById("menu-submit-btn").textContent = menu ? "บันทึกการแก้ไข" : "บันทึกเมนู";
   document.getElementById("menu-name").value = menu ? menu.name : "";
+  document.getElementById("menu-price").value = (menu && menu.price !== "" && menu.price !== undefined) ? menu.price : "";
   document.getElementById("menu-order").value = menu ? menu.order : "";
   document.getElementById("menu-order-field").classList.toggle("hidden", !menu);
   document.getElementById("menu-status-field").classList.toggle("hidden", !menu);
   if (menu) document.getElementById("menu-status").value = menu.status;
+  fillMenuCategorySelect(menu ? menu.category : "");
   fillMenuCodeSelect(menu ? menu.codeId : "");
   setMenuImagePreview(menu ? menu.image : "");
   openModal("modal-menu");
@@ -915,11 +874,14 @@ document.getElementById("form-add-menu").addEventListener("submit", async (e) =>
   e.preventDefault();
   const menuId = document.getElementById("menu-id").value;
   const name = document.getElementById("menu-name").value.trim();
+  const category = document.getElementById("menu-category").value;
+  if (!category) return toast("กรุณาเลือกหมวด", true);
   const codeId = document.getElementById("menu-code").value;
   if (!codeId) return toast("กรุณาเลือก Code", true);
+  const priceVal = document.getElementById("menu-price").value; // เว้นว่างได้ (ราคาไม่คงที่ เช่น Line Man)
   const orderVal = document.getElementById("menu-order").value;
 
-  const payload = { name, codeId, image: state.menuImageDataUrl || "" };
+  const payload = { name, category, price: priceVal, codeId, image: state.menuImageDataUrl || "" };
   if (menuId) {
     payload.menuId = menuId;
     payload.status = document.getElementById("menu-status").value;
@@ -954,14 +916,15 @@ function renderMenusAdminList() {
   wrap.innerHTML = "";
   state.menus.forEach(m => {
     const code = state.codes.find(c => c.id === m.codeId);
+    const priceText = (m.price !== "" && m.price !== undefined) ? `ราคา ${money(m.price)}` : "ไม่ตั้งราคาตายตัว";
     const row = document.createElement("div");
     row.className = "mm-row";
     row.innerHTML = `
       ${m.image ? `<img src="${m.image}" alt="">` : `<div class="ph">🍉</div>`}
       <div class="info">
         <div class="title">${m.name}</div>
-        <div class="sub">${code ? code.name : "(ไม่พบ Code นี้แล้ว)"} · ลำดับ ${m.order}</div>
-        <div class="sub ${m.status === "hidden" ? "hidden-badge" : ""}">${m.status === "hidden" ? "ซ่อนอยู่" : "แสดงอยู่ในหน้าขาย"}</div>
+        <div class="sub">${m.category || "-"} · ${code ? code.name : "(ไม่พบ Code นี้แล้ว)"} · ${priceText}</div>
+        <div class="sub ${m.status === "hidden" ? "hidden-badge" : ""}">${m.status === "hidden" ? "ซ่อนอยู่" : "แสดงอยู่ในหน้าขาย"} · ลำดับ ${m.order}</div>
       </div>
       <div class="acts">
         <button type="button" class="btn-edit-menu" data-menu-id="${m.id}">แก้ไข</button>
@@ -985,7 +948,7 @@ document.getElementById("menus-list").addEventListener("click", async (e) => {
 });
 
 // ============================================================
-// เลือกโหมด (หลังบ้าน / ขายสินค้า) + โหมดขาย (เต็มจอ ปุ่มรูปภาพ)
+// เลือกโหมด (หลังบ้าน / ขายสินค้า) + โหมดขาย (เต็มจอ ปุ่มรูปภาพขยายได้)
 // ============================================================
 // พนักงานทั่วไป (role !== admin) เข้าโหมดขายตรงเสมอ ไม่ต้องเลือก — มีแต่ admin
 // ที่เห็นหน้าเลือกโหมด และระบบจำโหมดล่าสุดที่เลือกไว้ (ต่ออุปกรณ์ ไม่ใช่ต่อคน)
@@ -1058,78 +1021,158 @@ async function loadMenusForSales() {
     renderSalesMenuGrid();
   } catch (err) { wrap.innerHTML = '<div class="empty-state">โหลดเมนูไม่สำเร็จ</div>'; }
 }
+
+// ปุ่มเมนู 1 ปุ่ม = การ์ดที่ "ขยายได้" แตะรูปแล้วเผยช่องจำนวน+ราคาด้านใน
+// (ราคาเติมอัตโนมัติถ้าตั้งราคาตายตัวไว้แล้วจากหลังบ้าน) เปิดได้พร้อมกันได้
+// หลายใบ ปุ่ม "ยืนยันการขาย" ของแต่ละใบทำงานอิสระจากกัน ไม่มีตะกร้ารวม —
+// จะบันทึกทันทีทีละรายการ หรือเปิดค้างไว้หลายใบแล้วมากดยืนยันรวดเดียวตอน
+// ปิดร้านก็ได้ตามที่ทางร้านสะดวก
+function buildSalesMenuTile(m) {
+  const tile = document.createElement("div");
+  tile.className = "sm-tile";
+  tile.dataset.menuId = m.id;
+  const hasPrice = m.price !== "" && m.price !== undefined && m.price !== null;
+  tile.innerHTML = `
+    <button type="button" class="sm-menu-btn">
+      ${m.image ? `<img src="${m.image}" alt="">` : `<div class="ph">🍉</div>`}
+      <div class="nm">${m.name}</div>
+    </button>
+    <div class="sm-tile-expand hidden">
+      <button type="button" class="sm-tile-close" title="ยกเลิก">✕</button>
+      <div class="sm-tile-fields">
+        <input type="number" class="sm-tile-qty" min="0.01" step="any" placeholder="จำนวน">
+        <input type="number" class="sm-tile-price" min="0" step="any" placeholder="ราคา/หน่วย" value="${hasPrice ? m.price : ""}">
+      </div>
+      <div class="sm-tile-err hidden"></div>
+      <button type="button" class="sm-tile-confirm hidden">ยืนยันการขาย</button>
+    </div>`;
+  return tile;
+}
 function renderSalesMenuGrid() {
   const wrap = document.getElementById("sm-menu-grid");
   if (!state.salesMenus.length) {
     wrap.innerHTML = '<div class="empty-state">ยังไม่มีเมนู — ให้ผู้ดูแลระบบไปเพิ่มที่หลังบ้าน &gt; จัดการเมนูขาย</div>';
     return;
   }
+  // จัดกลุ่มตามหมวด เรียงตามลำดับหมวดที่ตั้งไว้ (state.menuCategories) เมนูที่
+  // ไม่มีหมวด (ข้อมูลเก่าก่อนมีฟีเจอร์นี้) จะถูกจัดไว้ในกลุ่ม "อื่นๆ" ท้ายสุด
+  const order = state.menuCategories.length
+    ? state.menuCategories
+    : [...new Set(state.salesMenus.map(m => m.category).filter(Boolean))];
+  const groups = {};
+  state.salesMenus.forEach(m => { const c = m.category || "อื่นๆ"; (groups[c] = groups[c] || []).push(m); });
+  const catList = [...order.filter(c => groups[c]), ...Object.keys(groups).filter(c => !order.includes(c))];
+
   wrap.innerHTML = "";
-  state.salesMenus.forEach(m => {
-    const btn = document.createElement("button");
-    btn.type = "button"; btn.className = "sm-menu-btn"; btn.dataset.menuId = m.id;
-    btn.innerHTML = `${m.image ? `<img src="${m.image}" alt="">` : `<div class="ph">🍉</div>`}<div class="nm">${m.name}</div>`;
-    wrap.appendChild(btn);
+  catList.forEach(cat => {
+    const heading = document.createElement("div");
+    heading.className = "sm-cat-heading";
+    heading.textContent = cat;
+    wrap.appendChild(heading);
+    groups[cat].forEach(m => wrap.appendChild(buildSalesMenuTile(m)));
   });
 }
+
+function openSaleTile(tile) {
+  const expand = tile.querySelector(".sm-tile-expand");
+  if (!expand.classList.contains("hidden")) return; // เปิดอยู่แล้ว ไม่ต้องทำซ้ำ
+  expand.classList.remove("hidden");
+  tile.classList.add("open");
+  updateTileConfirmVisibility(tile);
+  setTimeout(() => tile.querySelector(".sm-tile-qty").focus(), 60);
+}
+function collapseSaleTile(tile) {
+  tile.querySelector(".sm-tile-expand").classList.add("hidden");
+  tile.classList.remove("open");
+  const menu = state.salesMenus.find(m => m.id === tile.dataset.menuId);
+  const hasPrice = menu && menu.price !== "" && menu.price !== undefined && menu.price !== null;
+  tile.querySelector(".sm-tile-qty").value = "";
+  tile.querySelector(".sm-tile-price").value = hasPrice ? menu.price : "";
+  hideTileError(tile);
+  tile.querySelector(".sm-tile-confirm").classList.add("hidden");
+}
+// ปุ่ม "ยืนยันการขาย" จะโผล่มาก็ต่อเมื่อกรอกจำนวนแล้วเท่านั้น (ราคาส่วนใหญ่
+// เติมอัตโนมัติไว้ก่อนแล้ว แต่ถ้าเมนูไหนไม่ได้ตั้งราคาตายตัว จะเช็กราคาอีกที
+// ตอนกดยืนยัน ไม่ปล่อยให้กดไปโดยไม่มีราคา)
+function updateTileConfirmVisibility(tile) {
+  const qty = tile.querySelector(".sm-tile-qty").value;
+  tile.querySelector(".sm-tile-confirm").classList.toggle("hidden", !(qty !== "" && Number(qty) > 0));
+}
+function showTileError(tile, msg) {
+  const err = tile.querySelector(".sm-tile-err");
+  err.textContent = msg; err.classList.remove("hidden");
+}
+function hideTileError(tile) {
+  tile.querySelector(".sm-tile-err").classList.add("hidden");
+}
+
 document.getElementById("sm-menu-grid").addEventListener("click", (e) => {
-  const btn = e.target.closest(".sm-menu-btn");
-  if (!btn) return;
-  if (!state.salesChannel) { toast("กรุณาเลือกช่องทางการจำหน่ายก่อน", true); return; }
-  const menu = state.salesMenus.find(m => m.id === btn.dataset.menuId);
-  if (menu) openSaleItemModal(menu);
+  const closeBtn = e.target.closest(".sm-tile-close");
+  if (closeBtn) { collapseSaleTile(closeBtn.closest(".sm-tile")); return; }
+
+  const confirmBtn = e.target.closest(".sm-tile-confirm");
+  if (confirmBtn) { openTileSaleSummary(confirmBtn.closest(".sm-tile")); return; }
+
+  const menuBtn = e.target.closest(".sm-menu-btn");
+  if (menuBtn) {
+    if (!state.salesChannel) { toast("กรุณาเลือกช่องทางการจำหน่ายก่อน", true); return; }
+    openSaleTile(menuBtn.closest(".sm-tile"));
+  }
+});
+document.getElementById("sm-menu-grid").addEventListener("input", (e) => {
+  const tile = e.target.closest(".sm-tile");
+  if (!tile) return;
+  if (e.target.classList.contains("sm-tile-qty")) updateTileConfirmVisibility(tile);
+  if (e.target.classList.contains("sm-tile-qty") || e.target.classList.contains("sm-tile-price")) hideTileError(tile);
 });
 
-function openSaleItemModal(menu) {
-  state.activeSaleMenu = menu;
-  document.getElementById("sale-item-title").textContent = menu.name;
-  document.getElementById("sale-item-channel-hint").textContent = "ช่องทาง: " + state.salesChannel;
-  document.getElementById("si-price").value = "";
-  document.getElementById("si-qty").value = 1;
-  document.getElementById("si-total").value = "";
-  openModal("modal-sale-item");
-  setTimeout(() => document.getElementById("si-price").focus(), 50);
-}
-// ยอดรวมพรีวิว ใช้สูตร computeSaleTotal เดียวกับหน้าบันทึกขายเดิมทุกประการ
-// (นิยามไว้ด้านล่างในส่วน "ยอดรวม" — ถูกเรียกใช้ตรงนี้ได้เพราะ JavaScript ยก
-// function declaration ขึ้นไปประมวลผลก่อนทั้งไฟล์เสมอ ไม่ต้องย้ายลำดับโค้ด)
-function updateSaleItemTotalPreview() {
-  const price = document.getElementById("si-price").value;
-  const qty = document.getElementById("si-qty").value;
-  document.getElementById("si-total").value =
-    price === "" ? "" : money(computeSaleTotal(qty, price, state.salesChannel));
-}
-["si-price", "si-qty"].forEach(id =>
-  document.getElementById(id).addEventListener("input", updateSaleItemTotalPreview)
-);
-
-document.getElementById("form-sale-item").addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const menu = state.activeSaleMenu;
+// กด "ยืนยันการขาย" บนการ์ด -> ตรวจให้ครบก่อน แล้วเปิด popup สรุป 1 รายการ
+// ให้ยืนยันอีกครั้ง (กันกดพลาด/เลขผิดตอนรีบๆ) การบันทึกจริงเกิดขึ้นตอนกด
+// "บันทึกการขาย" ใน popup เท่านั้น
+function openTileSaleSummary(tile) {
+  const qty = tile.querySelector(".sm-tile-qty").value;
+  const price = tile.querySelector(".sm-tile-price").value;
+  if (!(Number(qty) > 0)) { showTileError(tile, "กรุณาใส่จำนวน"); return; }
+  if (price === "") { showTileError(tile, "กรุณาใส่ราคา (ใส่ 0 ได้ถ้าแจกฟรี)"); return; }
+  const menu = state.salesMenus.find(m => m.id === tile.dataset.menuId);
   if (!menu) return;
-  const priceVal = document.getElementById("si-price").value;
-  // บังคับให้พิมพ์ราคาก่อนเสมอ แต่ใส่ 0 ได้ (กรณีแจกฟรี) — ตัดข้อผิดพลาด
-  // "ลืมใส่ราคา" ออกจากกรณี "ตั้งใจใส่ 0"
-  if (priceVal === "") return toast("กรุณาใส่ราคาขาย (ใส่ 0 ได้ถ้าแจกฟรี)", true);
+  state.pendingSale = { tile, menu, qty, price };
 
-  const code = state.codes.find(c => c.id === menu.codeId);
-  const packaging = code ? code.packaging.map(p => ({ productId: p.productId, qty: p.qty })) : [];
+  document.getElementById("summary-item-name").textContent = menu.name;
+  document.getElementById("summary-item-sub").textContent = `${state.salesChannel} · ${qty} x ${money(price)}`;
+  document.getElementById("summary-item-total").textContent = money(computeSaleTotal(qty, price, state.salesChannel));
+  openModal("modal-sale-summary");
+}
+document.getElementById("btn-summary-back").addEventListener("click", () => closeModal("modal-sale-summary"));
 
-  const res = await submitWithLock(e.target, "stockOut", {
-    itemName: menu.name,
+document.getElementById("btn-confirm-sale-summary").addEventListener("click", async () => {
+  const p = state.pendingSale;
+  if (!p) return;
+  const btn = document.getElementById("btn-confirm-sale-summary");
+  btn.disabled = true;
+  const code = state.codes.find(c => c.id === p.menu.codeId);
+  const packaging = code ? code.packaging.map(x => ({ productId: x.productId, qty: x.qty })) : [];
+  const res = await apiPost("stockOut", {
+    itemName: p.menu.name,
     code: code ? code.name : "",
     channel: state.salesChannel,
-    qty: document.getElementById("si-qty").value,
-    sellPrice: priceVal,
+    qty: p.qty,
+    sellPrice: p.price,
     packaging,
     employee: state.employee.name,
   });
+  btn.disabled = false;
   if (res.ok) {
+    closeModal("modal-sale-summary");
+    collapseSaleTile(p.tile);
     toast((res.lowStock && res.lowStock.length) ? `บันทึกแล้ว — บรรจุภัณฑ์ใกล้หมด: ${res.lowStock.join(", ")}` : "บันทึกการขายเรียบร้อย");
-    closeModal("modal-sale-item");
-    state.activeSaleMenu = null;
-  } else toast(res.error || "บันทึกไม่สำเร็จ", true);
+  } else {
+    closeModal("modal-sale-summary");
+    showTileError(p.tile, res.error || "บันทึกไม่สำเร็จ");
+  }
+  state.pendingSale = null;
 });
+
 
 // ============================================================
 // ยอดรวม (คำนวณอัตโนมัติตามช่องทางการจำหน่าย)
@@ -1146,50 +1189,6 @@ function computeSaleTotal(qty, price, channel) {
   if (String(channel || "").trim() === "Line Man") return roundMoney(p * (1 - 0.3210) * q);
   return roundMoney(q * p);
 }
-function updateOutTotalPreview() {
-  const qty = document.getElementById("out-qty").value;
-  const price = document.getElementById("out-price").value;
-  const channel = document.getElementById("out-channel").value;
-  document.getElementById("out-total").value = money(computeSaleTotal(qty, price, channel));
-}
-["out-qty", "out-price", "out-channel"].forEach(id => {
-  document.getElementById(id).addEventListener("input", updateOutTotalPreview);
-});
-
-document.getElementById("form-stockout").addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const itemName = document.getElementById("out-name").value.trim();
-  if (!itemName) return toast("กรุณาพิมพ์ชื่อรายการขาย", true);
-
-  const selectedCode = state.codes.find(c => c.id === document.getElementById("out-code").value);
-  // มี Code -> ใช้บรรจุภัณฑ์ที่ผูกไว้กับ Code นั้นอัตโนมัติ ไม่ต้องติ๊กเอง
-  // ไม่มี Code -> กลับไปใช้ช่องติ๊กเองแบบเดิม (ทางเลือกสำรอง)
-  const packaging = selectedCode
-    ? selectedCode.packaging.map(p => ({ productId: p.productId, qty: p.qty }))
-    : collectSelectedPackaging("out-packaging-list");
-
-  const res = await submitWithLock(e.target, "stockOut", {
-    itemName,
-    code: selectedCode ? selectedCode.name : "",
-    channel: document.getElementById("out-channel").value.trim(),
-    qty: document.getElementById("out-qty").value,
-    sellPrice: document.getElementById("out-price").value,
-    packaging,
-    note: document.getElementById("out-note").value,
-    employee: state.employee.name,
-  });
-  if (res.ok) {
-    toast((res.lowStock && res.lowStock.length) ? `บันทึกการขายแล้ว — บรรจุภัณฑ์ใกล้หมด: ${res.lowStock.join(", ")}` : "บันทึกการขายเรียบร้อย");
-    e.target.reset();
-    document.getElementById("out-qty").value = 1;
-    document.getElementById("out-total").value = "";
-    updateOutCodeUI();
-    loadPackagingOptions();
-    loadSaleItemNames();
-    refreshProducts(); refreshLowStock();
-  } else toast(res.error || "บันทึกไม่สำเร็จ", true);
-});
-
 // ============================================================
 // WASTE
 // ============================================================
@@ -1568,6 +1567,7 @@ window.addEventListener("appinstalled", () => {
 (function init() {
   renderPinDots();
   loadEmployeesForLogin();
+  loadMenuCategories();
 
   if (isRunningAsInstalledApp()) btnInstall.classList.add("hidden");
 

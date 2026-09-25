@@ -36,12 +36,23 @@
 .sm-channel-options{display:flex;gap:8px;flex-wrap:wrap}
 .sm-channel-chip{padding:9px 16px;border-radius:999px;border:1.5px solid #d8d2c2;background:#fff;font-family:inherit;font-size:14px;font-weight:600;color:#4a453a;cursor:pointer}
 .sm-channel-chip.active{background:#2F5233;border-color:#2F5233;color:#fff}
-.sm-grid{flex:1;display:grid;grid-template-columns:repeat(auto-fill,minmax(128px,1fr));gap:12px;padding:14px 16px 28px;overflow-y:auto}
-.sm-menu-btn{display:flex;flex-direction:column;align-items:center;gap:8px;background:#fff;border:1px solid #e7e2d6;border-radius:16px;padding:10px 8px 12px;cursor:pointer;font-family:inherit}
+.sm-grid{flex:1;display:grid;grid-template-columns:repeat(auto-fill,minmax(136px,1fr));gap:12px;padding:14px 16px 28px;overflow-y:auto;align-items:start}
+.sm-cat-heading{grid-column:1/-1;font-size:12.5px;font-weight:700;color:#8a5a2b;margin:8px 0 -2px}
+.sm-cat-heading:first-child{margin-top:0}
+.sm-tile{background:#fff;border:1px solid #e7e2d6;border-radius:16px;overflow:hidden;display:flex;flex-direction:column}
+.sm-tile.open{border-color:#2F5233}
+.sm-menu-btn{display:flex;flex-direction:column;align-items:center;gap:8px;background:none;border:none;padding:10px 8px 10px;cursor:pointer;font-family:inherit;width:100%}
 .sm-menu-btn img{width:100%;aspect-ratio:1/1;object-fit:cover;border-radius:12px;background:#eee;display:block}
 .sm-menu-btn .ph{width:100%;aspect-ratio:1/1;border-radius:12px;background:#eef1ea;display:flex;align-items:center;justify-content:center;font-size:30px}
 .sm-menu-btn .nm{font-size:13.5px;font-weight:600;text-align:center;color:#332f26;line-height:1.25}
 .sm-menu-btn:active{transform:scale(.97)}
+.sm-tile-expand{position:relative;padding:0 10px 10px;display:flex;flex-direction:column;gap:6px}
+.sm-tile-close{position:absolute;top:-32px;right:6px;background:rgba(0,0,0,.08);border:none;border-radius:50%;width:24px;height:24px;font-size:13px;line-height:1;cursor:pointer;color:#4a453a}
+.sm-tile-fields{display:flex;flex-direction:column;gap:6px}
+.sm-tile-fields input{width:100%;box-sizing:border-box;padding:8px 10px;border:1.4px solid #d8d2c2;border-radius:9px;font-family:inherit;font-size:14px}
+.sm-tile-err{font-size:11.5px;color:#c0392b}
+.sm-tile-confirm{background:#2F5233;color:#fff;border:none;border-radius:9px;padding:9px;font-family:inherit;font-size:13px;font-weight:700;cursor:pointer}
+.sm-tile-confirm:active{opacity:.85}
 
 .mm-grid{display:flex;flex-direction:column;gap:10px}
 .mm-row{display:flex;align-items:center;gap:12px;background:#fff;border:1px solid #e7e2d6;border-radius:14px;padding:10px 12px}
@@ -173,13 +184,10 @@
       </div>
 
       <div class="side-group" id="group-sales">
-        <button class="side-item side-group-toggle" data-group="sales" title="บันทึกขาย">
-          <span class="ic">🧾</span><span class="lbl">บันทึกขาย</span><span class="chev">▾</span>
+        <button class="side-item side-group-toggle" data-group="sales" title="ตั้งค่าการขาย">
+          <span class="ic">🧾</span><span class="lbl">ตั้งค่าการขาย</span><span class="chev">▾</span>
         </button>
         <div class="side-submenu">
-          <button class="side-subitem" data-view="stockout" title="บันทึกขาย">
-            <span class="ic">🧾</span><span class="lbl">บันทึกขาย</span>
-          </button>
           <button class="side-subitem" data-view="codes" title="จัดการ Code">
             <span class="ic">🔖</span><span class="lbl">จัดการ Code</span>
           </button>
@@ -270,56 +278,6 @@
             <div class="field"><label>จำนวนที่ตัด</label><input type="number" id="cut-qty" min="0.01" step="any" required></div>
             <div class="field"><label>หมายเหตุ (ไม่บังคับ)</label><input type="text" id="cut-note" placeholder="เช่น นำไปปอกขายวันนี้"></div>
             <button class="btn mango" type="submit">บันทึกตัดสต๊อก</button>
-          </form>
-        </div>
-      </section>
-
-      <!-- ---- STOCK OUT ---- -->
-      <section data-view="stockout" class="hidden">
-        <h2 class="view-title">บันทึกการขาย</h2>
-
-        <div class="card">
-          <form id="form-stockout">
-            <div class="field">
-              <label>Code</label>
-              <select id="out-code">
-                <option value="">— ไม่ใช้ Code (เลือกบรรจุภัณฑ์เอง) —</option>
-              </select>
-              <div class="hint" id="out-code-hint"></div>
-            </div>
-
-            <div class="field">
-              <label>ชื่อรายการขาย</label>
-              <input type="text" id="out-name" list="out-name-list" placeholder="เช่น กล่องผลไม้รวม, ไม้จิ้มผลไม้, น้ำผลไม้ขวด" autocomplete="off" required>
-              <datalist id="out-name-list"></datalist>
-              <div class="hint">เลือกจากรายการเดิมได้เลย หรือพิมพ์ชื่อใหม่ถ้ายังไม่เคยมี</div>
-            </div>
-
-            <div class="field">
-              <label>ช่องทางการจำหน่าย</label>
-              <input type="text" id="out-channel" list="out-channel-list" placeholder="เช่น หน้าบ้าน" autocomplete="off">
-              <datalist id="out-channel-list">
-                <option value="หน้าบ้าน"></option>
-                <option value="จ๊ะนวล"></option>
-                <option value="Line Man"></option>
-              </datalist>
-              <div class="hint">เลือกจากที่มีได้เลย หรือพิมพ์ช่องทางใหม่ก็ได้ — ถ้าเลือก "Line Man" ยอดรวมจะหักค่าคอมมิชชั่น 32.10% ให้อัตโนมัติ</div>
-            </div>
-
-            <div class="field-row">
-              <div class="field"><label>จำนวน</label><input type="number" id="out-qty" min="0.01" step="any" value="1" required></div>
-              <div class="field"><label>ราคาขาย/หน่วย (บาท)</label><input type="number" id="out-price" min="0" step="any" required></div>
-            </div>
-            <div class="field"><label>ยอดรวม (คำนวณอัตโนมัติ)</label><input type="text" id="out-total" disabled></div>
-
-            <div id="out-packaging-section">
-              <div class="section-label" style="margin-top:14px">บรรจุภัณฑ์ที่ใช้ในรายการนี้</div>
-              <div class="hint">เลือกเฉพาะที่ใช้จริง ระบบจะหักสต๊อกให้อัตโนมัติ (ถ้าไม่ใช้อะไรเลย ไม่ต้องเลือก)</div>
-              <div class="card" id="out-packaging-list" style="margin-top:8px"><div class="empty-state">กำลังโหลด…</div></div>
-            </div>
-
-            <div class="field" style="margin-top:14px"><label>หมายเหตุ (ไม่บังคับ)</label><input type="text" id="out-note"></div>
-            <button class="btn mango" type="submit">บันทึกการขาย</button>
           </form>
         </div>
       </section>
@@ -561,6 +519,14 @@
       </div>
       <div class="field"><label>ชื่อเมนู</label><input type="text" id="menu-name" maxlength="60" required></div>
       <div class="field">
+        <label>หมวด</label>
+        <select id="menu-category" required></select>
+      </div>
+      <div class="field">
+        <label>ราคา (ถ้าราคาตายตัว — เว้นว่างได้ถ้าราคาไม่คงที่ เช่น Line Man)</label>
+        <input type="number" id="menu-price" min="0" step="any" placeholder="เว้นว่าง = กรอกเองทุกครั้งตอนขาย">
+      </div>
+      <div class="field">
         <label>Code (บรรจุภัณฑ์ที่จะหักอัตโนมัติ)</label>
         <select id="menu-code" required></select>
         <div class="hint hidden" id="menu-code-hint">ยังไม่มี Code — ไปสร้างที่ "จัดการ Code" ก่อน</div>
@@ -578,19 +544,18 @@
   </div>
 </div>
 
-<div class="modal-backdrop hidden" id="modal-sale-item">
+<div class="modal-backdrop hidden" id="modal-sale-summary">
   <div class="modal-sheet">
-    <button class="modal-close" data-close-modal="modal-sale-item">✕</button>
-    <h3 id="sale-item-title">—</h3>
-    <p class="hint" id="sale-item-channel-hint"></p>
-    <form id="form-sale-item">
-      <div class="field-row">
-        <div class="field"><label>ราคาขาย/หน่วย (บาท)</label><input type="number" id="si-price" min="0" step="any" required></div>
-        <div class="field"><label>จำนวน</label><input type="number" id="si-qty" min="0.01" step="any" value="1" required></div>
-      </div>
-      <div class="field"><label>ยอดรวม (คำนวณอัตโนมัติ)</label><input type="text" id="si-total" disabled></div>
-      <button class="btn mango" type="submit">บันทึกการขาย</button>
-    </form>
+    <button class="modal-close" data-close-modal="modal-sale-summary">✕</button>
+    <h3>สรุปรายการขาย</h3>
+    <div class="list-row">
+      <div class="main"><div class="title" id="summary-item-name">—</div><div class="sub" id="summary-item-sub"></div></div>
+      <div class="trail" id="summary-item-total">฿0</div>
+    </div>
+    <div style="display:flex;gap:10px;margin-top:16px">
+      <button type="button" class="btn outline" id="btn-summary-back" style="flex:1">ย้อนกลับแก้ไข</button>
+      <button type="button" class="btn mango" id="btn-confirm-sale-summary" style="flex:1">บันทึกการขาย</button>
+    </div>
   </div>
 </div>
 
