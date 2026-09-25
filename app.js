@@ -13,6 +13,11 @@ const state = {
   adjustTarget: null,   // สินค้าที่กำลังจะปรับคงเหลือ {id, name, stock, unit}
   lowStockList: [],     // รายการสินค้าใกล้หมดล่าสุด (ดึงครั้งเดียว ใช้ทั้งการ์ดหน้าหลัก
                          // และหน้า "ดูทั้งหมด" กันยิง API ซ้ำโดยไม่จำเป็น)
+  menus: [],             // เมนูขายทั้งหมด รวมที่ซ่อนไว้ — ใช้ในหลังบ้าน (จัดการเมนูขาย)
+  salesMenus: [],        // เมนูขายเฉพาะที่ "แสดง" — ใช้ในหน้าโหมดขาย
+  salesChannel: "",      // ช่องทางที่เลือกไว้ในหน้าโหมดขาย (เลือกครั้งเดียวต่อรอบ)
+  activeSaleMenu: null,  // เมนูที่กำลังจะบันทึกการขาย (อยู่ระหว่างเปิด modal-sale-item)
+  menuImageDataUrl: "",  // รูปที่เลือก/ย่อแล้ว รอบันทึกในฟอร์มเพิ่ม/แก้ไขเมนู
 };
 
 // รายชื่อ view ที่อยู่ในกลุ่มเมนู "สต๊อก" (ใช้ตอนกางเมนูย่อยอัตโนมัติ)
@@ -21,7 +26,7 @@ const STOCK_GROUP_VIEWS = ["products", "stockcut"];
 // กลุ่มเมนู "บันทึกขาย" — แยก "จัดการ Code" ออกมาเป็นหน้าย่อยต่างหาก ไม่ให้
 // อยู่บนหน้าบันทึกขายเหมือนเดิม เพราะรายการ Code ที่ยาวขึ้นเรื่อยๆ จะดันฟอร์ม
 // บันทึกขายให้ตกลงไปด้านล่าง กรอกข้อมูลไม่สะดวก
-const SALES_GROUP_VIEWS = ["stockout", "codes"];
+const SALES_GROUP_VIEWS = ["stockout", "codes", "menus"];
 // รวมทุกกลุ่มเมนูไว้ที่เดียว เผื่อมีกลุ่มเพิ่มในอนาคตแค่มาต่อ array ตรงนี้พอ
 const SIDEBAR_GROUPS = [
   { id: "group-stock", views: STOCK_GROUP_VIEWS },
@@ -160,7 +165,7 @@ document.getElementById("keypad").addEventListener("click", async (e) => {
     if (res.ok) {
       state.employee = res.employee;
       localStorage.setItem("2kor_employee", JSON.stringify(res.employee));
-      enterApp();
+      routeAfterLogin();
     } else {
       document.getElementById("login-error").textContent = res.error || "เข้าสู่ระบบไม่สำเร็จ";
       state.pin = ""; renderPinDots();
@@ -173,23 +178,29 @@ function logout() {
   state.employee = null;
   state.pin = "";
   renderPinDots();
-  document.getElementById("app").classList.add("hidden");
+  hideAllScreens();
   document.getElementById("login-screen").classList.remove("hidden");
   loadEmployeesForLogin();
 }
 document.getElementById("btn-logout").addEventListener("click", logout);
+document.getElementById("btn-mode-select-logout").addEventListener("click", logout);
+document.getElementById("btn-sm-logout").addEventListener("click", logout);
 
 // ============================================================
 // APP SHELL / ROUTING
 // ============================================================
 function enterApp() {
-  document.getElementById("login-screen").classList.add("hidden");
+  hideAllScreens();
   document.getElementById("app").classList.remove("hidden");
   document.getElementById("topbar-emp").textContent =
     state.employee.name + (state.employee.role === "admin" ? " · ผู้ดูแลระบบ" : " · พนักงาน");
 
   document.getElementById("fab-add-product").classList.toggle("hidden", state.employee.role !== "admin");
   document.getElementById("side-employees").classList.toggle("hidden", state.employee.role !== "admin");
+  document.getElementById("side-menu-manage").classList.toggle("hidden", state.employee.role !== "admin");
+  // ปุ่มสลับโหมดโชว์เฉพาะ admin เพราะมีแต่ admin ที่เลือกได้ 2 โหมด (พนักงาน
+  // ทั่วไปเข้าโหมดขายตรงเสมอ ดู routeAfterLogin ด้านล่าง)
+  document.getElementById("btn-switch-mode").classList.toggle("hidden", state.employee.role !== "admin");
 
   goToView("dashboard");
   refreshProducts();
@@ -223,6 +234,7 @@ function goToView(name) {
   if (name === "stockcut") { /* selects already filled via fillProductSelects */ }
   if (name === "stockout") { loadPackagingOptions(); loadSaleItemNames(); loadCodes(); }
   if (name === "codes") loadCodes();
+  if (name === "menus") loadMenusAdmin();
   if (name === "summary") loadSummary();
   if (name === "stats") loadStats();
   if (name === "employees") loadEmployeesList();
@@ -782,6 +794,344 @@ document.getElementById("form-add-code").addEventListener("submit", async (e) =>
 });
 
 // ============================================================
+// เมนูขาย (ปุ่มเมนูรูปภาพ) — จัดการในหลังบ้าน + ใช้แสดงในหน้าโหมดขาย
+// ============================================================
+// เผื่อ margin จากลิมิตฝั่ง Apps Script (ช่องชีตจุได้ 50,000 ตัวอักษร เผื่อไว้
+// ที่ 48,000 ในโค้ดฝั่งเซิร์ฟเวอร์ ฝั่งนี้เผื่อเพิ่มอีกชั้นกันตัวเลขชนกันพอดี)
+const MENU_IMAGE_MAX_CHARS = 46000;
+
+function fileToDataURL(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(new Error("อ่านไฟล์รูปไม่สำเร็จ"));
+    reader.readAsDataURL(file);
+  });
+}
+function loadImageEl(src) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error("เปิดไฟล์รูปไม่สำเร็จ (ไฟล์อาจไม่ใช่รูปภาพ)"));
+    img.src = src;
+  });
+}
+// ย่อขนาด + ลดคุณภาพรูปด้วย canvas ของเบราว์เซอร์เอง (ไม่ต้องใช้ไลบรารีเพิ่ม)
+// ลองสูงสุด 8 รอบ: ลดคุณภาพก่อน ถ้าคุณภาพต่ำสุดแล้วยังใหญ่เกิน ค่อยลดความกว้างรูป
+async function resizeAndCompressImage(file) {
+  const dataUrl = await fileToDataURL(file);
+  const img = await loadImageEl(dataUrl);
+  let width = 320;
+  let quality = 0.82;
+  for (let attempt = 0; attempt < 8; attempt++) {
+    const scale = Math.min(1, width / img.naturalWidth);
+    const w = Math.max(1, Math.round(img.naturalWidth * scale));
+    const h = Math.max(1, Math.round(img.naturalHeight * scale));
+    const canvas = document.createElement("canvas");
+    canvas.width = w; canvas.height = h;
+    canvas.getContext("2d").drawImage(img, 0, 0, w, h);
+    const out = canvas.toDataURL("image/jpeg", quality);
+    if (out.length <= MENU_IMAGE_MAX_CHARS) return out;
+    if (quality > 0.5) quality -= 0.12; else width = Math.round(width * 0.85);
+  }
+  throw new Error("รูปนี้ย่อขนาดไม่พอ กรุณาลองรูปอื่น");
+}
+
+function setMenuImagePreview(dataUrl) {
+  const img = document.getElementById("menu-image-preview");
+  const ph = document.getElementById("menu-image-placeholder");
+  const removeBtn = document.getElementById("btn-remove-menu-image");
+  state.menuImageDataUrl = dataUrl || "";
+  if (dataUrl) {
+    img.src = dataUrl; img.classList.remove("hidden");
+    ph.classList.add("hidden");
+    removeBtn.classList.remove("hidden");
+  } else {
+    img.classList.add("hidden"); img.removeAttribute("src");
+    ph.classList.remove("hidden");
+    removeBtn.classList.add("hidden");
+  }
+}
+
+document.getElementById("menu-image-file").addEventListener("change", async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const hint = document.getElementById("menu-image-hint");
+  hint.textContent = "กำลังย่อรูป…";
+  try {
+    const compressed = await resizeAndCompressImage(file);
+    setMenuImagePreview(compressed);
+    hint.textContent = `ย่อรูปแล้ว (ประมาณ ${Math.round(compressed.length / 1024)} KB)`;
+  } catch (err) {
+    toast(err.message || "ย่อรูปไม่สำเร็จ ลองรูปอื่น", true);
+    hint.textContent = "เลือกรูปจากเครื่อง ระบบจะย่อขนาดให้อัตโนมัติ";
+  } finally {
+    e.target.value = ""; // เคลียร์ input ไว้ เผื่อจะเลือกไฟล์เดิมซ้ำเพื่อลองใหม่
+  }
+});
+document.getElementById("btn-remove-menu-image").addEventListener("click", () => setMenuImagePreview(""));
+
+function fillMenuCodeSelect(selectedCodeId) {
+  const sel = document.getElementById("menu-code");
+  const hint = document.getElementById("menu-code-hint");
+  sel.innerHTML = "";
+  if (!state.codes.length) {
+    sel.innerHTML = '<option value="">— ยังไม่มี Code —</option>';
+    hint.classList.remove("hidden");
+    return;
+  }
+  hint.classList.add("hidden");
+  state.codes.forEach(c => {
+    const opt = document.createElement("option");
+    opt.value = c.id; opt.textContent = c.name;
+    sel.appendChild(opt);
+  });
+  if (selectedCodeId) sel.value = selectedCodeId;
+}
+
+// เปิด modal เพิ่ม/แก้ไขเมนู — menu = null คือโหมด "เพิ่มใหม่" (ลำดับ/สถานะ
+// กำหนดอัตโนมัติฝั่งเซิร์ฟเวอร์ จึงซ่อน 2 ช่องนี้ไว้ตอนเพิ่มใหม่)
+function openMenuModal(menu) {
+  const form = document.getElementById("form-add-menu");
+  form.reset();
+  document.getElementById("menu-id").value = menu ? menu.id : "";
+  document.getElementById("modal-menu-title").textContent = menu ? "แก้ไขเมนูขาย" : "เพิ่มเมนูขาย";
+  document.getElementById("menu-submit-btn").textContent = menu ? "บันทึกการแก้ไข" : "บันทึกเมนู";
+  document.getElementById("menu-name").value = menu ? menu.name : "";
+  document.getElementById("menu-order").value = menu ? menu.order : "";
+  document.getElementById("menu-order-field").classList.toggle("hidden", !menu);
+  document.getElementById("menu-status-field").classList.toggle("hidden", !menu);
+  if (menu) document.getElementById("menu-status").value = menu.status;
+  fillMenuCodeSelect(menu ? menu.codeId : "");
+  setMenuImagePreview(menu ? menu.image : "");
+  openModal("modal-menu");
+}
+document.getElementById("btn-add-menu").addEventListener("click", () => {
+  if (!state.codes.length) { toast('ยังไม่มี Code — ไปสร้างที่ "จัดการ Code" ก่อน', true); return; }
+  openMenuModal(null);
+});
+
+document.getElementById("form-add-menu").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const menuId = document.getElementById("menu-id").value;
+  const name = document.getElementById("menu-name").value.trim();
+  const codeId = document.getElementById("menu-code").value;
+  if (!codeId) return toast("กรุณาเลือก Code", true);
+  const orderVal = document.getElementById("menu-order").value;
+
+  const payload = { name, codeId, image: state.menuImageDataUrl || "" };
+  if (menuId) {
+    payload.menuId = menuId;
+    payload.status = document.getElementById("menu-status").value;
+  } else {
+    payload.employee = state.employee.name;
+  }
+  if (orderVal !== "") payload.order = orderVal;
+
+  const res = await submitWithLock(e.target, menuId ? "updateMenu" : "addMenu", payload);
+  if (res.ok) {
+    toast(menuId ? "แก้ไขเมนูเรียบร้อย" : "เพิ่มเมนูเรียบร้อย");
+    closeModal("modal-menu");
+    loadMenusAdmin();
+  } else toast(res.error || "บันทึกเมนูไม่สำเร็จ", true);
+});
+
+async function loadMenusAdmin() {
+  const wrap = document.getElementById("menus-list");
+  try {
+    const list = await apiGet("getMenus", { includeHidden: "1" });
+    state.menus = Array.isArray(list) ? list : [];
+    renderMenusAdminList();
+  } catch (err) { wrap.innerHTML = '<div class="empty-state">โหลดเมนูไม่สำเร็จ</div>'; }
+}
+
+function renderMenusAdminList() {
+  const wrap = document.getElementById("menus-list");
+  if (!state.menus.length) {
+    wrap.innerHTML = '<div class="empty-state">ยังไม่มีเมนู — กด "+ เพิ่มเมนู" เพื่อสร้างอันแรก</div>';
+    return;
+  }
+  wrap.innerHTML = "";
+  state.menus.forEach(m => {
+    const code = state.codes.find(c => c.id === m.codeId);
+    const row = document.createElement("div");
+    row.className = "mm-row";
+    row.innerHTML = `
+      ${m.image ? `<img src="${m.image}" alt="">` : `<div class="ph">🍉</div>`}
+      <div class="info">
+        <div class="title">${m.name}</div>
+        <div class="sub">${code ? code.name : "(ไม่พบ Code นี้แล้ว)"} · ลำดับ ${m.order}</div>
+        <div class="sub ${m.status === "hidden" ? "hidden-badge" : ""}">${m.status === "hidden" ? "ซ่อนอยู่" : "แสดงอยู่ในหน้าขาย"}</div>
+      </div>
+      <div class="acts">
+        <button type="button" class="btn-edit-menu" data-menu-id="${m.id}">แก้ไข</button>
+        <button type="button" class="btn-toggle-menu" data-menu-id="${m.id}" data-next="${m.status === "hidden" ? "active" : "hidden"}">${m.status === "hidden" ? "เปิดแสดง" : "ซ่อน"}</button>
+      </div>`;
+    wrap.appendChild(row);
+  });
+}
+document.getElementById("menus-list").addEventListener("click", async (e) => {
+  const editBtn = e.target.closest(".btn-edit-menu");
+  if (editBtn) {
+    const m = state.menus.find(x => x.id === editBtn.dataset.menuId);
+    if (m) openMenuModal(m);
+    return;
+  }
+  const toggleBtn = e.target.closest(".btn-toggle-menu");
+  if (toggleBtn) {
+    const res = await apiPost("updateMenu", { menuId: toggleBtn.dataset.menuId, status: toggleBtn.dataset.next });
+    if (res.ok) loadMenusAdmin(); else toast(res.error || "แก้ไขไม่สำเร็จ", true);
+  }
+});
+
+// ============================================================
+// เลือกโหมด (หลังบ้าน / ขายสินค้า) + โหมดขาย (เต็มจอ ปุ่มรูปภาพ)
+// ============================================================
+// พนักงานทั่วไป (role !== admin) เข้าโหมดขายตรงเสมอ ไม่ต้องเลือก — มีแต่ admin
+// ที่เห็นหน้าเลือกโหมด และระบบจำโหมดล่าสุดที่เลือกไว้ (ต่ออุปกรณ์ ไม่ใช่ต่อคน)
+// ไว้ใน localStorage คีย์ "2kor_last_mode" ล็อกอินครั้งถัดไปจะเข้าโหมดเดิมทันที
+function hideAllScreens() {
+  document.getElementById("login-screen").classList.add("hidden");
+  document.getElementById("mode-select-screen").classList.add("hidden");
+  document.getElementById("app").classList.add("hidden");
+  document.getElementById("sales-screen").classList.add("hidden");
+}
+
+function routeAfterLogin() {
+  if (state.employee.role !== "admin") { enterSalesMode(); return; }
+  const last = localStorage.getItem("2kor_last_mode");
+  if (last === "sales") enterSalesMode();
+  else if (last === "backoffice") enterApp();
+  else showModeSelect();
+}
+
+function showModeSelect() {
+  hideAllScreens();
+  document.getElementById("mode-select-screen").classList.remove("hidden");
+  document.getElementById("mode-select-emp").textContent = state.employee.name;
+}
+document.getElementById("btn-mode-sales").addEventListener("click", () => {
+  localStorage.setItem("2kor_last_mode", "sales");
+  enterSalesMode();
+});
+document.getElementById("btn-mode-backoffice").addEventListener("click", () => {
+  localStorage.setItem("2kor_last_mode", "backoffice");
+  enterApp();
+});
+
+function switchMode() { showModeSelect(); }
+document.getElementById("btn-switch-mode").addEventListener("click", switchMode);
+document.getElementById("btn-sm-switch-mode").addEventListener("click", switchMode);
+
+async function enterSalesMode() {
+  hideAllScreens();
+  document.getElementById("sales-screen").classList.remove("hidden");
+  document.getElementById("sm-emp").textContent = state.employee.name;
+  // ปุ่มสลับกลับหลังบ้านโชว์เฉพาะ admin (พนักงานทั่วไปไม่มีสิทธิ์เข้าหลังบ้าน)
+  document.getElementById("btn-sm-switch-mode").classList.toggle("hidden", state.employee.role !== "admin");
+
+  state.salesChannel = localStorage.getItem("2kor_sales_channel") || "";
+  updateSalesChannelUI();
+
+  document.getElementById("sm-menu-grid").innerHTML = '<div class="empty-state">กำลังโหลดเมนู…</div>';
+  await Promise.all([loadCodes(), loadMenusForSales()]);
+}
+
+function updateSalesChannelUI() {
+  document.querySelectorAll(".sm-channel-chip").forEach(btn =>
+    btn.classList.toggle("active", btn.dataset.channel === state.salesChannel)
+  );
+}
+document.getElementById("sm-channel-options").addEventListener("click", (e) => {
+  const btn = e.target.closest(".sm-channel-chip");
+  if (!btn) return;
+  state.salesChannel = btn.dataset.channel;
+  localStorage.setItem("2kor_sales_channel", state.salesChannel);
+  updateSalesChannelUI();
+});
+
+async function loadMenusForSales() {
+  const wrap = document.getElementById("sm-menu-grid");
+  try {
+    const list = await apiGet("getMenus"); // ไม่ส่ง includeHidden -> เฉพาะเมนูที่ "แสดง" เท่านั้น
+    state.salesMenus = Array.isArray(list) ? list : [];
+    renderSalesMenuGrid();
+  } catch (err) { wrap.innerHTML = '<div class="empty-state">โหลดเมนูไม่สำเร็จ</div>'; }
+}
+function renderSalesMenuGrid() {
+  const wrap = document.getElementById("sm-menu-grid");
+  if (!state.salesMenus.length) {
+    wrap.innerHTML = '<div class="empty-state">ยังไม่มีเมนู — ให้ผู้ดูแลระบบไปเพิ่มที่หลังบ้าน &gt; จัดการเมนูขาย</div>';
+    return;
+  }
+  wrap.innerHTML = "";
+  state.salesMenus.forEach(m => {
+    const btn = document.createElement("button");
+    btn.type = "button"; btn.className = "sm-menu-btn"; btn.dataset.menuId = m.id;
+    btn.innerHTML = `${m.image ? `<img src="${m.image}" alt="">` : `<div class="ph">🍉</div>`}<div class="nm">${m.name}</div>`;
+    wrap.appendChild(btn);
+  });
+}
+document.getElementById("sm-menu-grid").addEventListener("click", (e) => {
+  const btn = e.target.closest(".sm-menu-btn");
+  if (!btn) return;
+  if (!state.salesChannel) { toast("กรุณาเลือกช่องทางการจำหน่ายก่อน", true); return; }
+  const menu = state.salesMenus.find(m => m.id === btn.dataset.menuId);
+  if (menu) openSaleItemModal(menu);
+});
+
+function openSaleItemModal(menu) {
+  state.activeSaleMenu = menu;
+  document.getElementById("sale-item-title").textContent = menu.name;
+  document.getElementById("sale-item-channel-hint").textContent = "ช่องทาง: " + state.salesChannel;
+  document.getElementById("si-price").value = "";
+  document.getElementById("si-qty").value = 1;
+  document.getElementById("si-total").value = "";
+  openModal("modal-sale-item");
+  setTimeout(() => document.getElementById("si-price").focus(), 50);
+}
+// ยอดรวมพรีวิว ใช้สูตร computeSaleTotal เดียวกับหน้าบันทึกขายเดิมทุกประการ
+// (นิยามไว้ด้านล่างในส่วน "ยอดรวม" — ถูกเรียกใช้ตรงนี้ได้เพราะ JavaScript ยก
+// function declaration ขึ้นไปประมวลผลก่อนทั้งไฟล์เสมอ ไม่ต้องย้ายลำดับโค้ด)
+function updateSaleItemTotalPreview() {
+  const price = document.getElementById("si-price").value;
+  const qty = document.getElementById("si-qty").value;
+  document.getElementById("si-total").value =
+    price === "" ? "" : money(computeSaleTotal(qty, price, state.salesChannel));
+}
+["si-price", "si-qty"].forEach(id =>
+  document.getElementById(id).addEventListener("input", updateSaleItemTotalPreview)
+);
+
+document.getElementById("form-sale-item").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const menu = state.activeSaleMenu;
+  if (!menu) return;
+  const priceVal = document.getElementById("si-price").value;
+  // บังคับให้พิมพ์ราคาก่อนเสมอ แต่ใส่ 0 ได้ (กรณีแจกฟรี) — ตัดข้อผิดพลาด
+  // "ลืมใส่ราคา" ออกจากกรณี "ตั้งใจใส่ 0"
+  if (priceVal === "") return toast("กรุณาใส่ราคาขาย (ใส่ 0 ได้ถ้าแจกฟรี)", true);
+
+  const code = state.codes.find(c => c.id === menu.codeId);
+  const packaging = code ? code.packaging.map(p => ({ productId: p.productId, qty: p.qty })) : [];
+
+  const res = await submitWithLock(e.target, "stockOut", {
+    itemName: menu.name,
+    code: code ? code.name : "",
+    channel: state.salesChannel,
+    qty: document.getElementById("si-qty").value,
+    sellPrice: priceVal,
+    packaging,
+    employee: state.employee.name,
+  });
+  if (res.ok) {
+    toast((res.lowStock && res.lowStock.length) ? `บันทึกแล้ว — บรรจุภัณฑ์ใกล้หมด: ${res.lowStock.join(", ")}` : "บันทึกการขายเรียบร้อย");
+    closeModal("modal-sale-item");
+    state.activeSaleMenu = null;
+  } else toast(res.error || "บันทึกไม่สำเร็จ", true);
+});
+
+// ============================================================
 // ยอดรวม (คำนวณอัตโนมัติตามช่องทางการจำหน่าย)
 // Line Man หักค่าคอมมิชชั่น 32.10% ออกจากราคาขาย/หน่วยก่อนคูณจำนวน
 // ช่องทางอื่นคิดแบบปกติ จำนวน × ราคาขาย/หน่วย — ปัดทศนิยม 2 ตำแหน่งเสมอ
@@ -1223,7 +1573,7 @@ window.addEventListener("appinstalled", () => {
 
   const saved = localStorage.getItem("2kor_employee");
   if (saved) {
-    try { state.employee = JSON.parse(saved); enterApp(); } catch (e) { /* ignore */ }
+    try { state.employee = JSON.parse(saved); routeAfterLogin(); } catch (e) { /* ignore */ }
   }
 
   if ("serviceWorker" in navigator) {

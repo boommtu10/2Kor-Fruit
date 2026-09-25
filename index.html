@@ -15,6 +15,49 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@500;600;700&family=IBM+Plex+Sans+Thai:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="./style.css">
+<style>
+/* ---- เพิ่มเข้ามาสำหรับ: เลือกโหมด / โหมดขาย (เต็มจอ) / จัดการเมนู — ไม่แก้ style.css เดิม ---- */
+#mode-select-screen{min-height:100dvh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:32px 20px calc(32px + env(safe-area-inset-bottom,0px));text-align:center;box-sizing:border-box}
+.mode-select-grid{display:flex;flex-direction:column;gap:14px;width:100%;max-width:340px;margin-top:22px}
+.mode-select-btn{display:flex;flex-direction:column;align-items:center;gap:4px;padding:22px 16px;border-radius:18px;border:none;cursor:pointer;font-family:inherit;color:#fff;box-shadow:0 6px 18px rgba(0,0,0,.15)}
+.mode-select-btn .ic{font-size:34px}
+.mode-select-btn .t{font-size:18px;font-weight:700}
+.mode-select-btn .d{font-size:13px;opacity:.9;font-weight:400}
+.mode-select-btn.sales{background:#2F5233}
+.mode-select-btn.backoffice{background:#8a5a2b}
+
+#sales-screen{min-height:100dvh;display:flex;flex-direction:column;background:#f4f1ea;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);box-sizing:border-box}
+.sm-topbar{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:#2F5233;color:#fff;flex-shrink:0}
+.sm-emp{font-weight:600;font-size:15px}
+.sm-actions{display:flex;gap:6px}
+.sm-actions .icon-btn{background:rgba(255,255,255,.16);color:#fff}
+.sm-channel-bar{padding:12px 16px;background:#fff;border-bottom:1px solid #e7e2d6;flex-shrink:0}
+.sm-channel-label{font-size:12px;color:#7a7566;margin-bottom:6px;font-weight:600}
+.sm-channel-options{display:flex;gap:8px;flex-wrap:wrap}
+.sm-channel-chip{padding:9px 16px;border-radius:999px;border:1.5px solid #d8d2c2;background:#fff;font-family:inherit;font-size:14px;font-weight:600;color:#4a453a;cursor:pointer}
+.sm-channel-chip.active{background:#2F5233;border-color:#2F5233;color:#fff}
+.sm-grid{flex:1;display:grid;grid-template-columns:repeat(auto-fill,minmax(128px,1fr));gap:12px;padding:14px 16px 28px;overflow-y:auto}
+.sm-menu-btn{display:flex;flex-direction:column;align-items:center;gap:8px;background:#fff;border:1px solid #e7e2d6;border-radius:16px;padding:10px 8px 12px;cursor:pointer;font-family:inherit}
+.sm-menu-btn img{width:100%;aspect-ratio:1/1;object-fit:cover;border-radius:12px;background:#eee;display:block}
+.sm-menu-btn .ph{width:100%;aspect-ratio:1/1;border-radius:12px;background:#eef1ea;display:flex;align-items:center;justify-content:center;font-size:30px}
+.sm-menu-btn .nm{font-size:13.5px;font-weight:600;text-align:center;color:#332f26;line-height:1.25}
+.sm-menu-btn:active{transform:scale(.97)}
+
+.mm-grid{display:flex;flex-direction:column;gap:10px}
+.mm-row{display:flex;align-items:center;gap:12px;background:#fff;border:1px solid #e7e2d6;border-radius:14px;padding:10px 12px}
+.mm-row img{width:52px;height:52px;object-fit:cover;border-radius:10px;background:#eee;flex-shrink:0;display:block}
+.mm-row .ph{width:52px;height:52px;border-radius:10px;background:#eef1ea;display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0}
+.mm-row .info{flex:1;min-width:0}
+.mm-row .info .title{font-weight:600;font-size:14.5px}
+.mm-row .info .sub{font-size:12.5px;color:#7a7566;margin-top:2px}
+.mm-row .info .sub.hidden-badge{color:#b23a3a}
+.mm-row .acts{display:flex;flex-direction:column;gap:6px}
+.mm-row .acts button{font-size:12.5px;padding:6px 10px;border-radius:8px;border:1px solid #d8d2c2;background:#fff;cursor:pointer;font-family:inherit;white-space:nowrap}
+
+.mm-image-picker{display:flex;flex-direction:column;gap:8px;align-items:flex-start}
+.mm-image-preview{width:120px;height:120px;object-fit:cover;border-radius:12px;background:#eee}
+.mm-image-placeholder{width:120px;height:120px;border-radius:12px;background:#eef1ea;display:flex;align-items:center;justify-content:center;font-size:12.5px;color:#8a8570;text-align:center;padding:8px}
+</style>
 </head>
 <body>
 
@@ -47,6 +90,52 @@
     <button class="key wide" data-k="clear">ล้าง</button>
     <button class="key" data-k="0">0</button>
     <button class="key wide" data-k="back">⌫</button>
+  </div>
+</div>
+
+<!-- ============ เลือกโหมด (เฉพาะ admin — พนักงานทั่วไปเข้าโหมดขายตรงเลย) ============ -->
+<div id="mode-select-screen" class="hidden">
+  <img class="slice-mark login-logo" src="./icons/logo-256.png" alt="โลโก้ 2 กอ ผลไม้ปอกพร้อมทาน">
+  <h1 class="login-title" style="font-size:20px">สวัสดีคุณ <span id="mode-select-emp"></span></h1>
+  <p class="login-sub">เข้าใช้งานแบบไหนดี</p>
+  <div class="mode-select-grid">
+    <button type="button" class="mode-select-btn sales" id="btn-mode-sales">
+      <span class="ic">🧾</span>
+      <span class="t">ขายสินค้า</span>
+      <span class="d">แตะเมนู ใส่ราคา บันทึกไว</span>
+    </button>
+    <button type="button" class="mode-select-btn backoffice" id="btn-mode-backoffice">
+      <span class="ic">🗂️</span>
+      <span class="t">หลังบ้าน</span>
+      <span class="d">สต๊อก ต้นทุน สรุปยอด รายงาน</span>
+    </button>
+  </div>
+  <button type="button" class="btn outline" id="btn-mode-select-logout" style="max-width:280px;margin:28px auto 0">ออกจากระบบ</button>
+</div>
+
+<!-- ============ โหมดขาย (เต็มจอ ปุ่มรูปภาพ) ============ -->
+<div id="sales-screen" class="hidden">
+  <div class="sm-topbar">
+    <div class="sm-emp" id="sm-emp">—</div>
+    <div class="sm-actions">
+      <button class="icon-btn hidden" id="btn-sm-switch-mode" title="สลับโหมด">🔁</button>
+      <button class="icon-btn" id="btn-sm-logout" title="ออกจากระบบ">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v8"/><path d="M18.4 6.6a9 9 0 1 1-12.77 0"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <div class="sm-channel-bar">
+    <div class="sm-channel-label">ช่องทางการจำหน่าย</div>
+    <div class="sm-channel-options" id="sm-channel-options">
+      <button type="button" class="sm-channel-chip" data-channel="หน้าบ้าน">หน้าบ้าน</button>
+      <button type="button" class="sm-channel-chip" data-channel="จ๊ะนวล">จ๊ะนวล</button>
+      <button type="button" class="sm-channel-chip" data-channel="Line Man">Line Man</button>
+    </div>
+  </div>
+
+  <div class="sm-grid" id="sm-menu-grid">
+    <div class="empty-state">กำลังโหลดเมนู…</div>
   </div>
 </div>
 
@@ -94,6 +183,9 @@
           <button class="side-subitem" data-view="codes" title="จัดการ Code">
             <span class="ic">🔖</span><span class="lbl">จัดการ Code</span>
           </button>
+          <button class="side-subitem hidden" data-view="menus" id="side-menu-manage" title="จัดการเมนูขาย">
+            <span class="ic">🖼️</span><span class="lbl">จัดการเมนูขาย</span>
+          </button>
         </div>
       </div>
       <button class="side-item" data-view="waste" title="ของเสีย">
@@ -125,6 +217,7 @@
         <div class="emp" id="topbar-emp">—</div>
       </div>
       <button class="icon-btn hidden" id="btn-install" title="ติดตั้งเป็นแอป">⬇️</button>
+      <button class="icon-btn hidden" id="btn-switch-mode" title="สลับโหมด">🔁</button>
       <button class="icon-btn" id="btn-low-stock" title="สินค้าใกล้หมด">🔔</button>
       <button class="icon-btn" id="btn-logout" title="ออกจากระบบ">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v8"/><path d="M18.4 6.6a9 9 0 1 1-12.77 0"/></svg>
@@ -237,6 +330,14 @@
         <div class="hint" style="margin-top:-6px">Code คือชุดบรรจุภัณฑ์ที่ตั้งไว้ล่วงหน้า พอเลือก Code ตอนบันทึกขาย ระบบจะหักสต๊อกบรรจุภัณฑ์ตามที่ผูกไว้ให้อัตโนมัติ ไม่ต้องติ๊กเลือกเองทุกครั้ง</div>
         <button class="btn outline" type="button" id="btn-add-code" style="margin:10px 0 12px">＋ เพิ่ม Code</button>
         <div class="card" id="codes-list"><div class="empty-state">ยังไม่มี Code — กด "+ เพิ่ม Code" เพื่อสร้างอันแรก</div></div>
+      </section>
+
+      <!-- ---- เมนูขาย (ปุ่มรูปภาพในหน้า "ขายสินค้า") ---- -->
+      <section data-view="menus" class="hidden">
+        <h2 class="view-title">จัดการเมนูขาย</h2>
+        <div class="hint" style="margin-top:-6px">ปุ่มเมนูที่ตั้งไว้นี้จะไปโผล่ในหน้า "ขายสินค้า" ให้พนักงานแตะเลือกแทนการพิมพ์เอง แต่ละปุ่มผูกกับ Code เพื่อหักบรรจุภัณฑ์ให้อัตโนมัติ — ราคายังต้องใส่เองทุกครั้งตอนขาย เพราะราคาต่างกันไปตามช่องทาง</div>
+        <button class="btn outline" type="button" id="btn-add-menu" style="margin:10px 0 12px">＋ เพิ่มเมนู</button>
+        <div class="mm-grid" id="menus-list"><div class="empty-state">กำลังโหลด…</div></div>
       </section>
 
       <!-- ---- WASTE ---- -->
@@ -438,6 +539,57 @@
         <select id="ne-role"><option value="staff">พนักงาน (staff)</option><option value="admin">ผู้ดูแลระบบ (admin)</option></select>
       </div>
       <button class="btn" type="submit">บันทึกพนักงาน</button>
+    </form>
+  </div>
+</div>
+
+<div class="modal-backdrop hidden" id="modal-menu">
+  <div class="modal-sheet">
+    <button class="modal-close" data-close-modal="modal-menu">✕</button>
+    <h3 id="modal-menu-title">เพิ่มเมนูขาย</h3>
+    <form id="form-add-menu">
+      <input type="hidden" id="menu-id" value="">
+      <div class="field">
+        <label>รูปเมนู</label>
+        <div class="mm-image-picker">
+          <img id="menu-image-preview" class="mm-image-preview hidden" alt="ตัวอย่างรูปเมนู">
+          <div class="mm-image-placeholder" id="menu-image-placeholder">ยังไม่มีรูป</div>
+          <input type="file" id="menu-image-file" accept="image/*" capture="environment">
+          <button type="button" class="btn outline hidden" id="btn-remove-menu-image">ลบรูป</button>
+        </div>
+        <div class="hint" id="menu-image-hint">เลือกรูปจากเครื่อง ระบบจะย่อขนาดให้อัตโนมัติ</div>
+      </div>
+      <div class="field"><label>ชื่อเมนู</label><input type="text" id="menu-name" maxlength="60" required></div>
+      <div class="field">
+        <label>Code (บรรจุภัณฑ์ที่จะหักอัตโนมัติ)</label>
+        <select id="menu-code" required></select>
+        <div class="hint hidden" id="menu-code-hint">ยังไม่มี Code — ไปสร้างที่ "จัดการ Code" ก่อน</div>
+      </div>
+      <div class="field" id="menu-order-field"><label>ลำดับการแสดง (ไม่ใส่ = ต่อท้ายสุด)</label><input type="number" id="menu-order" min="0" step="1"></div>
+      <div class="field hidden" id="menu-status-field">
+        <label>สถานะ</label>
+        <select id="menu-status">
+          <option value="active">แสดงในหน้าขาย</option>
+          <option value="hidden">ซ่อน (ไม่แสดง)</option>
+        </select>
+      </div>
+      <button class="btn" type="submit" id="menu-submit-btn" style="margin-top:14px">บันทึกเมนู</button>
+    </form>
+  </div>
+</div>
+
+<div class="modal-backdrop hidden" id="modal-sale-item">
+  <div class="modal-sheet">
+    <button class="modal-close" data-close-modal="modal-sale-item">✕</button>
+    <h3 id="sale-item-title">—</h3>
+    <p class="hint" id="sale-item-channel-hint"></p>
+    <form id="form-sale-item">
+      <div class="field-row">
+        <div class="field"><label>ราคาขาย/หน่วย (บาท)</label><input type="number" id="si-price" min="0" step="any" required></div>
+        <div class="field"><label>จำนวน</label><input type="number" id="si-qty" min="0.01" step="any" value="1" required></div>
+      </div>
+      <div class="field"><label>ยอดรวม (คำนวณอัตโนมัติ)</label><input type="text" id="si-total" disabled></div>
+      <button class="btn mango" type="submit">บันทึกการขาย</button>
     </form>
   </div>
 </div>
