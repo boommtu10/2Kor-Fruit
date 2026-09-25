@@ -1,6 +1,6 @@
 // Service worker: แคชเฉพาะ "app shell" (หน้าตาโปรแกรม) ให้เปิดแอปได้แม้เน็ตหลุด
 // ส่วนข้อมูล (เรียก GAS_URL) จะไปที่เครือข่ายเสมอ เพื่อให้เห็นข้อมูลล่าสุด
-const CACHE_NAME = "2kor-shell-v4"; // v3 -> v4: เพิ่มหมวด/ราคาในเมนู, เปลี่ยนโหมดขายเป็นการ์ดขยาย, เอาหน้าบันทึกขายเดิมออก
+const CACHE_NAME = "2kor-shell-v5"; // v4 -> v5: แก้บั๊กคอลัมน์ชนกันใน ensureMenusSchema/ensureStockOutSchema (ล็อกเฉพาะตอน migrate), แยกราคาเมนูตามช่องทาง (หน้าบ้าน/จ๊ะนวล/Line Man)
 const SHELL_FILES = [
   "./",
   "./index.html",

@@ -65,6 +65,10 @@
 .mm-row .acts{display:flex;flex-direction:column;gap:6px}
 .mm-row .acts button{font-size:12.5px;padding:6px 10px;border-radius:8px;border:1px solid #d8d2c2;background:#fff;cursor:pointer;font-family:inherit;white-space:nowrap}
 
+.mm-price-row{display:flex;gap:8px}
+.mm-price-col{flex:1;min-width:0;display:flex;flex-direction:column;gap:4px}
+.mm-price-tag{font-size:11.5px;color:#7a7566;font-weight:600}
+.mm-price-col input{width:100%;box-sizing:border-box;padding:8px 10px;border:1.4px solid #d8d2c2;border-radius:9px;font-family:inherit;font-size:14px}
 .mm-image-picker{display:flex;flex-direction:column;gap:8px;align-items:flex-start}
 .mm-image-preview{width:120px;height:120px;object-fit:cover;border-radius:12px;background:#eee}
 .mm-image-placeholder{width:120px;height:120px;border-radius:12px;background:#eef1ea;display:flex;align-items:center;justify-content:center;font-size:12.5px;color:#8a8570;text-align:center;padding:8px}
@@ -293,7 +297,7 @@
       <!-- ---- เมนูขาย (ปุ่มรูปภาพในหน้า "ขายสินค้า") ---- -->
       <section data-view="menus" class="hidden">
         <h2 class="view-title">จัดการเมนูขาย</h2>
-        <div class="hint" style="margin-top:-6px">ปุ่มเมนูที่ตั้งไว้นี้จะไปโผล่ในหน้า "ขายสินค้า" ให้พนักงานแตะเลือกแทนการพิมพ์เอง แต่ละปุ่มผูกกับ Code เพื่อหักบรรจุภัณฑ์ให้อัตโนมัติ — ราคายังต้องใส่เองทุกครั้งตอนขาย เพราะราคาต่างกันไปตามช่องทาง</div>
+        <div class="hint" style="margin-top:-6px">ปุ่มเมนูที่ตั้งไว้นี้จะไปโผล่ในหน้า "ขายสินค้า" ให้พนักงานแตะเลือกแทนการพิมพ์เอง แต่ละปุ่มผูกกับ Code เพื่อหักบรรจุภัณฑ์ให้อัตโนมัติ — ตั้งราคาแยกตามช่องทางได้ (หน้าบ้าน/จ๊ะนวล/Line Man) ช่องทางไหนไม่ตั้งราคาไว้ พนักงานจะกรอกเองตอนขายช่องทางนั้น</div>
         <button class="btn outline" type="button" id="btn-add-menu" style="margin:10px 0 12px">＋ เพิ่มเมนู</button>
         <div class="mm-grid" id="menus-list"><div class="empty-state">กำลังโหลด…</div></div>
       </section>
@@ -523,8 +527,21 @@
         <select id="menu-category" required></select>
       </div>
       <div class="field">
-        <label>ราคา (ถ้าราคาตายตัว — เว้นว่างได้ถ้าราคาไม่คงที่ เช่น Line Man)</label>
-        <input type="number" id="menu-price" min="0" step="any" placeholder="เว้นว่าง = กรอกเองทุกครั้งตอนขาย">
+        <label>ราคาแยกตามช่องทาง (ถ้าราคาตายตัว — เว้นว่างช่องไหนได้ถ้าราคาช่องทางนั้นไม่คงที่)</label>
+        <div class="mm-price-row">
+          <div class="mm-price-col">
+            <span class="mm-price-tag">หน้าบ้าน</span>
+            <input type="number" id="menu-price-front" min="0" step="any" placeholder="เว้นว่าง = กรอกเอง">
+          </div>
+          <div class="mm-price-col">
+            <span class="mm-price-tag">จ๊ะนวล</span>
+            <input type="number" id="menu-price-januan" min="0" step="any" placeholder="เว้นว่าง = กรอกเอง">
+          </div>
+          <div class="mm-price-col">
+            <span class="mm-price-tag">Line Man</span>
+            <input type="number" id="menu-price-lineman" min="0" step="any" placeholder="เว้นว่าง = กรอกเอง">
+          </div>
+        </div>
       </div>
       <div class="field">
         <label>Code (บรรจุภัณฑ์ที่จะหักอัตโนมัติ)</label>

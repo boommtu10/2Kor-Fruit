@@ -20,6 +20,19 @@ const state = {
   menuImageDataUrl: "",  // รูปที่เลือก/ย่อแล้ว รอบันทึกในฟอร์มเพิ่ม/แก้ไขเมนู
 };
 
+// ช่องทางการจำหน่าย ต้องตรงกับ data-channel ของปุ่ม .sm-channel-chip ใน
+// index.html และ SALES_CHANNELS ฝั่ง Code.gs — ใช้แมปไปหา key ราคาที่ตั้งไว้
+// ต่อเมนู 1 รายการ (ดู getMenuPriceForChannel ด้านล่าง)
+const CHANNEL_PRICE_KEY = { "หน้าบ้าน": "priceFront", "จ๊ะนวล": "priceJanuan", "Line Man": "priceLineman" };
+// คืนราคาตายตัวของเมนู m สำหรับช่องทาง channel ถ้าไม่ได้ตั้งไว้ (หรือช่องทาง
+// ไม่รู้จัก) คืนค่าว่าง '' ให้พนักงานกรอกเองตอนขายเหมือนเดิม
+function getMenuPriceForChannel(m, channel) {
+  const key = CHANNEL_PRICE_KEY[channel];
+  if (!key || !m) return "";
+  const v = m[key];
+  return (v === "" || v === undefined || v === null) ? "" : v;
+}
+
 // รายชื่อ view ที่อยู่ในกลุ่มเมนู "สต๊อก" (ใช้ตอนกางเมนูย่อยอัตโนมัติ)
 // หมายเหตุ: เอา "stockin" ออกแล้ว เพราะรวมเข้ากับ "เพิ่มสินค้า" (modal) ไปแล้ว
 const STOCK_GROUP_VIEWS = ["products", "stockcut"];
@@ -855,7 +868,9 @@ function openMenuModal(menu) {
   document.getElementById("modal-menu-title").textContent = menu ? "แก้ไขเมนูขาย" : "เพิ่มเมนูขาย";
   document.getElementById("menu-submit-btn").textContent = menu ? "บันทึกการแก้ไข" : "บันทึกเมนู";
   document.getElementById("menu-name").value = menu ? menu.name : "";
-  document.getElementById("menu-price").value = (menu && menu.price !== "" && menu.price !== undefined) ? menu.price : "";
+  document.getElementById("menu-price-front").value = (menu && menu.priceFront !== "" && menu.priceFront !== undefined) ? menu.priceFront : "";
+  document.getElementById("menu-price-januan").value = (menu && menu.priceJanuan !== "" && menu.priceJanuan !== undefined) ? menu.priceJanuan : "";
+  document.getElementById("menu-price-lineman").value = (menu && menu.priceLineman !== "" && menu.priceLineman !== undefined) ? menu.priceLineman : "";
   document.getElementById("menu-order").value = menu ? menu.order : "";
   document.getElementById("menu-order-field").classList.toggle("hidden", !menu);
   document.getElementById("menu-status-field").classList.toggle("hidden", !menu);
@@ -878,10 +893,17 @@ document.getElementById("form-add-menu").addEventListener("submit", async (e) =>
   if (!category) return toast("กรุณาเลือกหมวด", true);
   const codeId = document.getElementById("menu-code").value;
   if (!codeId) return toast("กรุณาเลือก Code", true);
-  const priceVal = document.getElementById("menu-price").value; // เว้นว่างได้ (ราคาไม่คงที่ เช่น Line Man)
+  // แต่ละช่องทางเว้นว่างได้ (ราคาไม่คงที่) พนักงานจะกรอกเองตอนขายช่องทางนั้น
+  const priceFrontVal = document.getElementById("menu-price-front").value;
+  const priceJanuanVal = document.getElementById("menu-price-januan").value;
+  const priceLinemanVal = document.getElementById("menu-price-lineman").value;
   const orderVal = document.getElementById("menu-order").value;
 
-  const payload = { name, category, price: priceVal, codeId, image: state.menuImageDataUrl || "" };
+  const payload = {
+    name, category,
+    priceFront: priceFrontVal, priceJanuan: priceJanuanVal, priceLineman: priceLinemanVal,
+    codeId, image: state.menuImageDataUrl || ""
+  };
   if (menuId) {
     payload.menuId = menuId;
     payload.status = document.getElementById("menu-status").value;
@@ -907,6 +929,15 @@ async function loadMenusAdmin() {
   } catch (err) { wrap.innerHTML = '<div class="empty-state">โหลดเมนูไม่สำเร็จ</div>'; }
 }
 
+// สรุปราคาทั้ง 3 ช่องทางเป็นข้อความเดียว เช่น "หน้าบ้าน 35 · จ๊ะนวล 30 ·
+// Line Man กรอกเอง" ช่องทางไหนไม่ได้ตั้งราคาตายตัวไว้จะโชว์ "กรอกเอง"
+function formatMenuPrices(m) {
+  return Object.keys(CHANNEL_PRICE_KEY).map(ch => {
+    const v = getMenuPriceForChannel(m, ch);
+    return `${ch} ${v === "" ? "กรอกเอง" : money(v)}`;
+  }).join(" · ");
+}
+
 function renderMenusAdminList() {
   const wrap = document.getElementById("menus-list");
   if (!state.menus.length) {
@@ -916,7 +947,7 @@ function renderMenusAdminList() {
   wrap.innerHTML = "";
   state.menus.forEach(m => {
     const code = state.codes.find(c => c.id === m.codeId);
-    const priceText = (m.price !== "" && m.price !== undefined) ? `ราคา ${money(m.price)}` : "ไม่ตั้งราคาตายตัว";
+    const priceText = formatMenuPrices(m);
     const row = document.createElement("div");
     row.className = "mm-row";
     row.innerHTML = `
@@ -1011,6 +1042,11 @@ document.getElementById("sm-channel-options").addEventListener("click", (e) => {
   state.salesChannel = btn.dataset.channel;
   localStorage.setItem("2kor_sales_channel", state.salesChannel);
   updateSalesChannelUI();
+  // ราคาตายตัวของแต่ละเมนูขึ้นกับช่องทาง ต้องวาดการ์ดใหม่ทั้งหมดเพื่อให้ราคา
+  // ที่เติมอัตโนมัติในช่องยังไม่กดยืนยันตรงกับช่องทางที่เพิ่งเลือก (การ์ดที่
+  // เปิดค้างอยู่จะถูกยุบกลับเป็นปิดไปด้วย เพราะสลับช่องทางกลางคันไม่ควรเกิดขึ้น
+  // บ่อย — ปกติเลือกช่องทางครั้งเดียวตอนเริ่มขายรอบนั้น)
+  if (state.salesMenus.length) renderSalesMenuGrid();
 });
 
 async function loadMenusForSales() {
@@ -1031,7 +1067,10 @@ function buildSalesMenuTile(m) {
   const tile = document.createElement("div");
   tile.className = "sm-tile";
   tile.dataset.menuId = m.id;
-  const hasPrice = m.price !== "" && m.price !== undefined && m.price !== null;
+  // ราคาเติมอัตโนมัติตามช่องทางที่เลือกไว้ (state.salesChannel) ถ้าเมนูนี้
+  // ตั้งราคาตายตัวไว้สำหรับช่องทางนั้น ถ้าไม่ได้ตั้งไว้จะเว้นว่างให้กรอกเอง
+  const price = getMenuPriceForChannel(m, state.salesChannel);
+  const hasPrice = price !== "";
   tile.innerHTML = `
     <button type="button" class="sm-menu-btn">
       ${m.image ? `<img src="${m.image}" alt="">` : `<div class="ph">🍉</div>`}
@@ -1041,7 +1080,7 @@ function buildSalesMenuTile(m) {
       <button type="button" class="sm-tile-close" title="ยกเลิก">✕</button>
       <div class="sm-tile-fields">
         <input type="number" class="sm-tile-qty" min="0.01" step="any" placeholder="จำนวน">
-        <input type="number" class="sm-tile-price" min="0" step="any" placeholder="ราคา/หน่วย" value="${hasPrice ? m.price : ""}">
+        <input type="number" class="sm-tile-price" min="0" step="any" placeholder="ราคา/หน่วย" value="${hasPrice ? price : ""}">
       </div>
       <div class="sm-tile-err hidden"></div>
       <button type="button" class="sm-tile-confirm hidden">ยืนยันการขาย</button>
@@ -1085,9 +1124,9 @@ function collapseSaleTile(tile) {
   tile.querySelector(".sm-tile-expand").classList.add("hidden");
   tile.classList.remove("open");
   const menu = state.salesMenus.find(m => m.id === tile.dataset.menuId);
-  const hasPrice = menu && menu.price !== "" && menu.price !== undefined && menu.price !== null;
+  const price = getMenuPriceForChannel(menu, state.salesChannel);
   tile.querySelector(".sm-tile-qty").value = "";
-  tile.querySelector(".sm-tile-price").value = hasPrice ? menu.price : "";
+  tile.querySelector(".sm-tile-price").value = price !== "" ? price : "";
   hideTileError(tile);
   tile.querySelector(".sm-tile-confirm").classList.add("hidden");
 }
