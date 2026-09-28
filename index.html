@@ -209,9 +209,6 @@
       <button class="side-item" data-view="summary" title="สรุปยอด">
         <span class="ic">📊</span><span class="lbl">สรุปยอด</span>
       </button>
-      <button class="side-item" data-view="stats" title="สถิติ">
-        <span class="ic">🏆</span><span class="lbl">สถิติ</span>
-      </button>
       <button class="side-item hidden" data-view="employees" id="side-employees" title="พนักงาน">
         <span class="ic">👥</span><span class="lbl">พนักงาน</span>
       </button>
@@ -395,25 +392,6 @@
           <div class="list-row"><div class="main title">ยอดซื้อวัตถุดิบ (ช่วงนี้)</div><div class="trail" id="sum-raw">฿0</div></div>
           <div class="list-row"><div class="main title">ยอดซื้อทั้งหมด (รวมบรรจุภัณฑ์)</div><div class="trail" id="sum-in">฿0</div></div>
         </div>
-      </section>
-
-      <!-- ---- STATS (สถิติ) ---- -->
-      <section data-view="stats" class="hidden">
-        <h2 class="view-title">สถิติ</h2>
-
-        <div class="hint" id="stats-month-label" style="text-align:center; font-weight:600; margin:-2px 0 10px"></div>
-
-        <div class="field-row" style="margin-bottom:4px">
-          <div class="field"><button class="btn outline" type="button" id="stats-prev-month">‹ เดือนก่อน</button></div>
-          <div class="field"><button class="btn outline" type="button" id="stats-next-month">เดือนถัดไป ›</button></div>
-        </div>
-
-        <div style="display:flex; justify-content:flex-end; margin:6px 0 12px">
-          <button class="btn outline" type="button" id="stats-export-btn">⬇ Export (CSV)</button>
-        </div>
-
-        <div class="section-label">รายการขายดีที่สุด (เรียงตามจำนวนที่ขายได้)</div>
-        <div class="card" id="stats-list"><div class="empty-state">กำลังโหลด…</div></div>
       </section>
 
       <!-- ---- EMPLOYEES (admin) ---- -->
