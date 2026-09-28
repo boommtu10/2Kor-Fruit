@@ -209,6 +209,9 @@
       <button class="side-item" data-view="summary" title="สรุปยอด">
         <span class="ic">📊</span><span class="lbl">สรุปยอด</span>
       </button>
+      <button class="side-item" data-view="stats" title="สถิติ">
+        <span class="ic">🏆</span><span class="lbl">สถิติ</span>
+      </button>
       <button class="side-item hidden" data-view="employees" id="side-employees" title="พนักงาน">
         <span class="ic">👥</span><span class="lbl">พนักงาน</span>
       </button>
@@ -394,6 +397,25 @@
         </div>
       </section>
 
+      <!-- ---- STATS (สถิติ) ---- -->
+      <section data-view="stats" class="hidden">
+        <h2 class="view-title">สถิติ</h2>
+
+        <div class="hint" id="stats-month-label" style="text-align:center; font-weight:600; margin:-2px 0 10px"></div>
+
+        <div class="field-row" style="margin-bottom:4px">
+          <div class="field"><button class="btn outline" type="button" id="stats-prev-month">‹ เดือนก่อน</button></div>
+          <div class="field"><button class="btn outline" type="button" id="stats-next-month">เดือนถัดไป ›</button></div>
+        </div>
+
+        <div style="display:flex; justify-content:flex-end; margin:6px 0 12px">
+          <button class="btn outline" type="button" id="stats-export-btn">⬇ Export (CSV)</button>
+        </div>
+
+        <div class="section-label">รายการขายดีที่สุด (เรียงตามจำนวนที่ขายได้)</div>
+        <div class="card" id="stats-list"><div class="empty-state">กำลังโหลด…</div></div>
+      </section>
+
       <!-- ---- EMPLOYEES (admin) ---- -->
       <section data-view="employees" class="hidden">
         <h2 class="view-title">พนักงาน</h2>
@@ -508,6 +530,7 @@
       <div class="field">
         <label>หมวด</label>
         <select id="menu-category" required></select>
+        <input type="text" id="menu-category-new" class="hidden" maxlength="30" placeholder="พิมพ์ชื่อหมวดใหม่" style="margin-top:8px;width:100%;box-sizing:border-box;padding:8px 10px;border:1.4px solid #d8d2c2;border-radius:9px;font-family:inherit;font-size:14px">
       </div>
       <div class="field">
         <label>ราคาแยกตามช่องทาง (ถ้าราคาตายตัว — เว้นว่างช่องไหนได้ถ้าราคาช่องทางนั้นไม่คงที่)</label>

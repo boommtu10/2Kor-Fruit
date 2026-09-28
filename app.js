@@ -16,7 +16,7 @@ const state = {
   menuCategories: [],    // รายชื่อหมวดเมนู (โหลดครั้งเดียวตอนเปิดแอป)
   salesMenus: [],        // เมนูขายเฉพาะที่ "แสดง" — ใช้ในหน้าโหมดขาย
   salesChannel: "",      // ช่องทางที่เลือกไว้ในหน้าโหมดขาย (เลือกครั้งเดียวต่อรอบ)
-  pendingSaleItems: null, // รายการทั้งหมดที่กำลังรอยืนยันใน modal-sale-summary [{tile, menu, qty, price, itemName}, ...]
+  pendingSaleItems: null, // รายการทั้งหมดที่กำลังรอยืนยันใน modal-sale-summary [{tile, menu, qty, price}, ...]
   menuImageDataUrl: "",  // รูปที่เลือก/ย่อแล้ว รอบันทึกในฟอร์มเพิ่ม/แก้ไขเมนู
 };
 
@@ -89,22 +89,13 @@ function toast(msg, isError) {
   toastTimer = setTimeout(() => el.classList.remove("show"), 2600);
 }
 
-// แปลงตัวอักษรพิเศษ (< > & ") ให้ปลอดภัยก่อนแสดงบนหน้าเว็บ
-// เหตุผล: ชื่อรายการเป็นข้อความที่พนักงานพิมพ์เอง ถ้าเผลอพิมพ์เครื่องหมาย < ลงไป
-// หน้าเว็บอาจแสดงผลเพี้ยนได้
-function escapeHtml(s) {
-  return String(s == null ? "" : s)
-    .replace(/&/g, "&amp;").replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-}
-
 function money(n) {
   const v = Number(n) || 0;
   return "฿" + v.toLocaleString("th-TH", { maximumFractionDigits: 2 });
 }
 
 // ---------------- Export CSV ----------------
-// ใช้ในหน้า "สรุปยอด" — แปลง array ของแถว (แต่ละแถว
+// ใช้ร่วมกันทั้งหน้า "สถิติ" และหน้า "สรุปยอด" — แปลง array ของแถว (แต่ละแถว
 // เป็น array ของค่า) ให้เป็นไฟล์ .csv แล้วสั่งดาวน์โหลดผ่านเบราว์เซอร์ทันที
 // ไม่ต้องยิง request ไปหา Apps Script เพิ่ม เพราะข้อมูลที่จะ Export มีอยู่ใน
 // หน้าเว็บอยู่แล้ว (โหลดมาแสดงผลไปแล้วตอนนี้)
@@ -258,6 +249,7 @@ function goToView(name) {
   if (name === "codes") loadCodes();
   if (name === "menus") loadMenusAdmin();
   if (name === "summary") loadSummary();
+  if (name === "stats") loadStats();
   if (name === "employees") loadEmployeesList();
   if (name === "lowstock-all") renderLowStockAll();
 }
@@ -856,16 +848,40 @@ function fillMenuCodeSelect(selectedCodeId) {
   });
   if (selectedCodeId) sel.value = selectedCodeId;
 }
+
+// รวมหมวดจาก 2 แหล่ง: ค่าคงที่ฝั่งเซิร์ฟเวอร์ (state.menuCategories) +
+// หมวดที่เมนูที่มีอยู่แล้วใช้อยู่จริง (คอลัมน์ "หมวด" ในชีต เมนูขาย)
+// ทำให้หมวดที่พิมพ์เพิ่มเองครั้งก่อน กลับมาโผล่ในดรอปดาวเองโดยไม่ต้องมีที่เก็บรายชื่อหมวดแยก
+function getAllMenuCategories() {
+  const all = [...state.menuCategories];
+  [...state.menus, ...state.salesMenus].forEach(m => {
+    if (m.category && !all.includes(m.category)) all.push(m.category);
+  });
+  return all;
+}
 function fillMenuCategorySelect(selectedCategory) {
   const sel = document.getElementById("menu-category");
   sel.innerHTML = "";
-  state.menuCategories.forEach(cat => {
+  getAllMenuCategories().forEach(cat => {
     const opt = document.createElement("option");
     opt.value = cat; opt.textContent = cat;
     sel.appendChild(opt);
   });
+  // ตัวเลือกสุดท้าย: เลือกแล้วจะมีช่องพิมพ์ชื่อหมวดใหม่โผล่มา
+  const addOpt = document.createElement("option");
+  addOpt.value = "__new__"; addOpt.textContent = "+ เพิ่มหมวดใหม่…";
+  sel.appendChild(addOpt);
   if (selectedCategory) sel.value = selectedCategory;
+  const newInput = document.getElementById("menu-category-new");
+  newInput.classList.add("hidden");
+  newInput.value = "";
 }
+document.getElementById("menu-category").addEventListener("change", (e) => {
+  const input = document.getElementById("menu-category-new");
+  const isNew = e.target.value === "__new__";
+  input.classList.toggle("hidden", !isNew);
+  if (isNew) input.focus();
+});
 
 // เปิด modal เพิ่ม/แก้ไขเมนู — menu = null คือโหมด "เพิ่มใหม่" (ลำดับ/สถานะ
 // กำหนดอัตโนมัติฝั่งเซิร์ฟเวอร์ จึงซ่อน 2 ช่องนี้ไว้ตอนเพิ่มใหม่)
@@ -899,8 +915,10 @@ document.getElementById("form-add-menu").addEventListener("submit", async (e) =>
   const menuId = document.getElementById("menu-id").value;
   const name = document.getElementById("menu-name").value.trim();
   const packaging = document.getElementById("menu-packaging").value.trim();
-  const category = document.getElementById("menu-category").value;
-  if (!category) return toast("กรุณาเลือกหมวด", true);
+  // ถ้าเลือก "+ เพิ่มหมวดใหม่…" ให้ใช้ชื่อที่พิมพ์ในช่องแทน
+  let category = document.getElementById("menu-category").value;
+  if (category === "__new__") category = document.getElementById("menu-category-new").value.trim();
+  if (!category) return toast("กรุณาเลือกหรือพิมพ์หมวด", true);
   const codeId = document.getElementById("menu-code").value;
   if (!codeId) return toast("กรุณาเลือก Code", true);
   // แต่ละช่องทางเว้นว่างได้ (ราคาไม่คงที่) พนักงานจะกรอกเองตอนขายช่องทางนั้น
@@ -926,6 +944,8 @@ document.getElementById("form-add-menu").addEventListener("submit", async (e) =>
   if (res.ok) {
     toast(menuId ? "แก้ไขเมนูเรียบร้อย" : "เพิ่มเมนูเรียบร้อย");
     closeModal("modal-menu");
+    // จำหมวดใหม่ไว้ทันที ให้โผล่ในดรอปดาวรอบถัดไปแม้ยังไม่รีโหลดหน้า
+    if (!state.menuCategories.includes(category)) state.menuCategories.push(category);
     loadMenusAdmin();
   } else toast(res.error || "บันทึกเมนูไม่สำเร็จ", true);
 });
@@ -1068,11 +1088,11 @@ async function loadMenusForSales() {
   } catch (err) { wrap.innerHTML = '<div class="empty-state">โหลดเมนูไม่สำเร็จ</div>'; }
 }
 
-// ปุ่มเมนู 1 ปุ่ม = การ์ดที่ "ขยายได้" แตะรูปแล้วเผยช่องชื่อรายการ (ไม่บังคับ)
-// + จำนวน + ราคา ด้านใน (ราคาเติมอัตโนมัติถ้าตั้งราคาตายตัวไว้แล้วจากหลังบ้าน)
-// เปิดได้พร้อมกันได้หลายใบ ปุ่ม "ยืนยันการขาย" ของแต่ละใบทำงานอิสระจากกัน
-// ไม่มีตะกร้ารวม — จะบันทึกทันทีทีละรายการ หรือเปิดค้างไว้หลายใบแล้วมากดยืนยัน
-// รวดเดียวตอนปิดร้านก็ได้ตามที่ทางร้านสะดวก
+// ปุ่มเมนู 1 ปุ่ม = การ์ดที่ "ขยายได้" แตะรูปแล้วเผยช่องจำนวน+ราคาด้านใน
+// (ราคาเติมอัตโนมัติถ้าตั้งราคาตายตัวไว้แล้วจากหลังบ้าน) เปิดได้พร้อมกันได้
+// หลายใบ ปุ่ม "ยืนยันการขาย" ของแต่ละใบทำงานอิสระจากกัน ไม่มีตะกร้ารวม —
+// จะบันทึกทันทีทีละรายการ หรือเปิดค้างไว้หลายใบแล้วมากดยืนยันรวดเดียวตอน
+// ปิดร้านก็ได้ตามที่ทางร้านสะดวก
 function buildSalesMenuTile(m) {
   const tile = document.createElement("div");
   tile.className = "sm-tile";
@@ -1089,7 +1109,6 @@ function buildSalesMenuTile(m) {
     <div class="sm-tile-expand hidden">
       <button type="button" class="sm-tile-close" title="ยกเลิก">✕</button>
       <div class="sm-tile-fields">
-        <input type="text" class="sm-tile-itemname" maxlength="60" placeholder="ชื่อรายการ (ไม่บังคับ)">
         <input type="number" class="sm-tile-qty" min="0.01" step="any" placeholder="จำนวน">
         <input type="number" class="sm-tile-price" min="0" step="any" placeholder="ราคา/หน่วย" value="${hasPrice ? price : ""}">
       </div>
@@ -1106,6 +1125,7 @@ function renderSalesMenuGrid() {
   }
   // จัดกลุ่มตามหมวด เรียงตามลำดับหมวดที่ตั้งไว้ (state.menuCategories) เมนูที่
   // ไม่มีหมวด (ข้อมูลเก่าก่อนมีฟีเจอร์นี้) จะถูกจัดไว้ในกลุ่ม "อื่นๆ" ท้ายสุด
+  // หมวดที่พิมพ์เพิ่มเอง (ไม่อยู่ใน state.menuCategories) จะไปต่อท้ายตามลำดับที่พบ
   const order = state.menuCategories.length
     ? state.menuCategories
     : [...new Set(state.salesMenus.map(m => m.category).filter(Boolean))];
@@ -1136,7 +1156,6 @@ function collapseSaleTile(tile) {
   tile.classList.remove("open");
   const menu = state.salesMenus.find(m => m.id === tile.dataset.menuId);
   const price = getMenuPriceForChannel(menu, state.salesChannel);
-  tile.querySelector(".sm-tile-itemname").value = "";
   tile.querySelector(".sm-tile-qty").value = "";
   tile.querySelector(".sm-tile-price").value = price !== "" ? price : "";
   hideTileError(tile);
@@ -1144,8 +1163,7 @@ function collapseSaleTile(tile) {
 }
 // ปุ่ม "ยืนยันการขาย" จะโผล่มาก็ต่อเมื่อกรอกจำนวนแล้วเท่านั้น (ราคาส่วนใหญ่
 // เติมอัตโนมัติไว้ก่อนแล้ว แต่ถ้าเมนูไหนไม่ได้ตั้งราคาตายตัว จะเช็กราคาอีกที
-// ตอนกดยืนยัน ไม่ปล่อยให้กดไปโดยไม่มีราคา) ช่อง "ชื่อรายการ" ไม่บังคับ
-// จึงไม่เกี่ยวกับการโชว์ปุ่มนี้
+// ตอนกดยืนยัน ไม่ปล่อยให้กดไปโดยไม่มีราคา)
 function updateTileConfirmVisibility(tile) {
   const qty = tile.querySelector(".sm-tile-qty").value;
   tile.querySelector(".sm-tile-confirm").classList.toggle("hidden", !(qty !== "" && Number(qty) > 0));
@@ -1201,9 +1219,7 @@ function collectPendingSaleItems() {
       blocked = true;
       return;
     }
-    // ชื่อรายการ: ไม่บังคับ ถ้าเว้นว่างจะเป็น "" แล้วไปใช้ชื่อเมนูตอนบันทึกแทน
-    const itemName = tile.querySelector(".sm-tile-itemname").value.trim();
-    items.push({ tile, menu, qty, price, itemName });
+    items.push({ tile, menu, qty, price });
   });
   return { items, blocked };
 }
@@ -1216,7 +1232,7 @@ function renderSaleSummaryList(items) {
       const total = computeSaleTotal(p.qty, p.price, state.salesChannel);
       return `
       <div class="list-row">
-        <div class="main"><div class="title">${escapeHtml(p.menu.displayName)}${p.itemName ? " — " + escapeHtml(p.itemName) : ""}</div><div class="sub">${state.salesChannel} · ${p.qty} x ${money(p.price)}</div></div>
+        <div class="main"><div class="title">${p.menu.displayName}</div><div class="sub">${state.salesChannel} · ${p.qty} x ${money(p.price)}</div></div>
         <div class="trail">${money(total)}</div>
       </div>`;
     })
@@ -1259,9 +1275,7 @@ document.getElementById("btn-confirm-sale-summary").addEventListener("click", as
     const code = state.codes.find((c) => c.id === p.menu.codeId);
     const packaging = code ? code.packaging.map((x) => ({ productId: x.productId, qty: x.qty })) : [];
     const res = await apiPost("stockOut", {
-      // ถ้าพนักงานกรอก "ชื่อรายการ" ไว้ ใช้ชื่อนั้น ถ้าเว้นว่างใช้ชื่อเมนู
-      // (เช่น "ผลไม้รวม (500 ml.)") แทน เพื่อไม่ให้ช่องชื่อในชีต "ขายออก" ว่างเปล่า
-      itemName: p.itemName || p.menu.displayName,
+      itemName: p.menu.displayName,
       code: code ? code.name : "",
       channel: state.salesChannel,
       qty: p.qty,
@@ -1506,6 +1520,105 @@ function renderSummaryStockOutList(list) {
         <div class="sub">${timeLabel} · จำนวน ${r.qty} × ${money(r.sellPrice)}${r.channel ? " · " + r.channel : ""}${r.employee ? " · " + r.employee : ""}</div>
       </div>
       <div class="trail pos">${money(r.total)}</div>
+    `;
+    wrap.appendChild(row);
+  });
+}
+
+// ============================================================
+// STATS VIEW (สถิติ) — รายการขายดีที่สุดของเดือนที่กำลังดูอยู่
+// ค่าเริ่มต้นเมื่อเปิดหน้านี้ครั้งแรก (statsViewMonth = null) ยังคงเป็น
+// "เดือนปัจจุบัน" เหมือนเดิมทุกประการ ไม่กระทบพฤติกรรมเดิม — ปุ่ม
+// "‹ เดือนก่อน" / "เดือนถัดไป ›" ใช้เพื่อย้อนดูเดือนก่อนๆ ได้เพิ่มเติม
+// เท่านั้น (กดปุ่ม "เดือนถัดไป" เกินเดือนปัจจุบันไม่ได้ กันเผลอไปดูเดือน
+// ที่ยังไม่มีข้อมูล)
+let statsViewMonth = null;     // Date ของวันที่ 1 ในเดือนที่กำลังดู, null = ให้ backend เลือกเดือนปัจจุบันเอง
+let statsLastItems = [];       // รายการล่าสุดที่โหลดมาแสดง ใช้ตอนกด Export
+let statsLastMonthLabel = "";  // ป้ายชื่อเดือน (yyyy-MM) ล่าสุด ใช้ตั้งชื่อไฟล์ Export
+
+function monthParam(d) {
+  return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0");
+}
+
+async function loadStats() {
+  const label = document.getElementById("stats-month-label");
+  const wrap = document.getElementById("stats-list");
+  try {
+    const params = statsViewMonth ? { month: monthParam(statsViewMonth) } : {};
+    const res = await apiGet("getSalesStats", params);
+    const parts = String(res.month || "").split("-").map(Number);
+    if (parts.length === 2 && parts[0] && parts[1]) {
+      const d = new Date(parts[0], parts[1] - 1, 1);
+      statsViewMonth = d; // sync กับเดือนที่ backend ตอบกลับจริง (โหลดครั้งแรกยังไม่รู้ว่าเดือนปัจจุบันคือเดือนไหนจนกว่าจะได้คำตอบ)
+      statsLastMonthLabel = res.month;
+      const now = new Date();
+      const isCurrent = d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
+      label.textContent = "เดือน " + d.toLocaleDateString("th-TH", { month: "long", year: "numeric" }) +
+        (isCurrent ? " — ขึ้นเดือนใหม่ตัวเลขจะเริ่มนับใหม่ให้เองอัตโนมัติ" : "");
+    }
+    statsLastItems = res.items || [];
+    renderStatsList(statsLastItems);
+    updateStatsNavButtons();
+  } catch (err) {
+    wrap.innerHTML = '<div class="empty-state">โหลดสถิติไม่สำเร็จ</div>';
+  }
+}
+
+// ปิดปุ่ม "เดือนถัดไป" เมื่อดูถึงเดือนปัจจุบันแล้ว (ไปเดือนอนาคตไม่ได้ เพราะ
+// ยังไม่มีข้อมูลขาย) ปุ่ม "เดือนก่อน" เปิดให้กดย้อนได้เรื่อยๆ ไม่จำกัด
+function updateStatsNavButtons() {
+  const nextBtn = document.getElementById("stats-next-month");
+  const now = new Date();
+  const isCurrent = statsViewMonth &&
+    statsViewMonth.getFullYear() === now.getFullYear() &&
+    statsViewMonth.getMonth() === now.getMonth();
+  nextBtn.disabled = !!isCurrent;
+  nextBtn.style.opacity = isCurrent ? "0.4" : "1";
+}
+
+document.getElementById("stats-prev-month").addEventListener("click", () => {
+  const base = statsViewMonth || new Date();
+  statsViewMonth = new Date(base.getFullYear(), base.getMonth() - 1, 1);
+  loadStats();
+});
+document.getElementById("stats-next-month").addEventListener("click", () => {
+  const base = statsViewMonth || new Date();
+  const now = new Date();
+  const next = new Date(base.getFullYear(), base.getMonth() + 1, 1);
+  const isFuture = next.getFullYear() > now.getFullYear() ||
+    (next.getFullYear() === now.getFullYear() && next.getMonth() > now.getMonth());
+  if (isFuture) return; // กันไปดูเดือนอนาคต
+  statsViewMonth = next;
+  loadStats();
+});
+
+// Export หน้า "สถิติ" เป็น CSV — ใช้รายการของเดือนที่กำลังดูอยู่ตอนนี้
+// (statsLastItems) ไม่ว่าจะเป็นเดือนปัจจุบันหรือเดือนก่อนหน้าที่เลือกไว้
+document.getElementById("stats-export-btn").addEventListener("click", () => {
+  if (!statsLastItems.length) return toast("ยังไม่มีข้อมูลให้ Export", true);
+  const rows = [["อันดับ", "ชื่อรายการขาย", "ขายได้ (หน่วย)", "ยอดขาย (บาท)"]];
+  statsLastItems.forEach((item, idx) => {
+    rows.push([idx + 1, item.itemName, item.qty, item.total]);
+  });
+  downloadCSV(`สถิติ-${statsLastMonthLabel || "เดือนนี้"}.csv`, rows);
+});
+
+function renderStatsList(items) {
+  const wrap = document.getElementById("stats-list");
+  if (!items.length) {
+    wrap.innerHTML = '<div class="empty-state">ยังไม่มีรายการขายในเดือนนี้</div>';
+    return;
+  }
+  wrap.innerHTML = "";
+  items.forEach((item, idx) => {
+    const row = document.createElement("div");
+    row.className = "list-row";
+    row.innerHTML = `
+      <div class="main">
+        <div class="title">#${idx + 1} ${item.itemName}</div>
+        <div class="sub">ขายได้ ${item.qty} หน่วย</div>
+      </div>
+      <div class="trail pos">${money(item.total)}</div>
     `;
     wrap.appendChild(row);
   });
