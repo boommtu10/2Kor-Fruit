@@ -606,7 +606,7 @@ function renderPackagingChecklist(containerId, list, emptyMsg) {
     row.innerHTML = `
       <label style="display:flex;align-items:center;gap:8px;flex:1;cursor:pointer">
         <input type="checkbox" class="pack-check" data-pack-id="${p["รหัสสินค้า"]}" data-pack-name="${p["ชื่อสินค้า"]}">
-        <span>${p["ชื่อสินค้า"]} ${statusLabel}</span>
+        <span>${p["ชื่อสินค้า"]}${p["หมวดหมู่"] === "อื่นๆ" ? ' <span class="hint">[อื่นๆ]</span>' : ""} ${statusLabel}</span>
       </label>
       <input type="number" class="pack-qty" data-pack-id="${p["รหัสสินค้า"]}" value="1" min="1" step="1" style="width:64px" disabled>
     `;
@@ -634,6 +634,9 @@ function collectSelectedPackaging(containerId) {
   return selected;
 }
 
+// หมวดสินค้าที่ผูกกับ Code เพื่อตัดสต๊อกอัตโนมัติตอนขายได้
+const CODE_BINDABLE_CATEGORIES = ["บรรจุภัณฑ์", "อื่นๆ"];
+
 // รายการบรรจุภัณฑ์สำหรับ "ตั้งค่า Code" — โชว์เฉพาะที่ยังมีของเหลือในสต๊อก
 // (>0) เท่านั้น ตัวที่หมดแล้วไม่ต้องขึ้นให้เลือกใหม่ (ผูกไปก็ไม่มีของจริงจะหัก)
 // ยกเว้นตอน "แก้ไข Code" ที่ตัวเดิมเคยผูกไว้แล้วดันหมดสต๊อกไปพอดี — จะยังโชว์
@@ -643,8 +646,21 @@ function collectSelectedPackaging(containerId) {
 async function loadCodePackagingOptions(boundItems) {
   boundItems = Array.isArray(boundItems) ? boundItems : [];
   try {
-    const all = await apiGet("getPackaging");
-    const inStock = Array.isArray(all) ? all.filter(p => Number(p["สต๊อกปัจจุบัน"]) > 0) : [];
+    // ดึงสินค้าทั้งหมด แล้วกรองเองฝั่งหน้าเว็บ ให้เลือกผูกกับ Code ได้ทั้งหมวด
+    // "บรรจุภัณฑ์" และหมวด "อื่นๆ" (เช่น ขนม เครื่องดื่ม ของแถม) ที่ยังมีของเหลือ
+    // ไม่ใช้ getPackaging ของ Code.gs เพราะฝั่งนั้นน่าจะกรองเฉพาะ "บรรจุภัณฑ์"
+    let all;
+    try {
+      all = await apiGet("getProducts");
+      if (!Array.isArray(all)) throw new Error("bad response");
+    } catch (e) {
+      all = Array.isArray(state.products) ? state.products : [];
+    }
+    const inStock = all.filter(p =>
+      CODE_BINDABLE_CATEGORIES.includes(p["หมวดหมู่"]) &&
+      p["สถานะ"] !== "inactive" &&
+      Number(p["สต๊อกปัจจุบัน"]) > 0
+    );
     const inStockIds = new Set(inStock.map(p => p["รหัสสินค้า"]));
     const stale = boundItems
       .filter(b => !inStockIds.has(b.productId))
