@@ -49,17 +49,34 @@ const SIDEBAR_GROUPS = [
 // ---------------- API helper ----------------
 // หมายเหตุ: POST ไม่ตั้ง header Content-Type เอง เพื่อเลี่ยงปัญหา
 // CORS preflight กับ Apps Script (ฝั่ง GAS จะ JSON.parse(e.postData.contents) เอง)
+// token คือ "บัตรผ่าน" ที่เซิร์ฟเวอร์ให้ตอนล็อกอินสำเร็จ (เก็บอยู่ใน
+// state.employee.token ซึ่งถูกเซฟลง localStorage อยู่แล้วโดยโค้ดเดิม)
+function authToken() {
+  return state.employee && state.employee.token ? state.employee.token : "";
+}
+
+// ถ้าเซิร์ฟเวอร์ตอบว่าบัตรผ่านหมดอายุ/ไม่มี ให้เด้งกลับหน้าล็อกอินทันที
+// เช็ค state.employee ก่อน เพื่อไม่ให้คำขอหลายอันที่พังพร้อมกัน
+// สั่ง logout ซ้ำหลายรอบ
+function checkAuth(data) {
+  if (data && data.code === "AUTH" && state.employee) {
+    toast("หมดเวลาการเข้าสู่ระบบ กรุณาเข้าสู่ระบบใหม่", true);
+    logout();
+  }
+  return data;
+}
+
 async function apiGet(action, params) {
-  const qs = new URLSearchParams({ action, ...(params || {}) }).toString();
+  const qs = new URLSearchParams({ action, token: authToken(), ...(params || {}) }).toString();
   const res = await fetch(`${GAS_URL}?${qs}`, { method: "GET" });
-  return res.json();
+  return checkAuth(await res.json());
 }
 async function apiPost(action, payload) {
   const res = await fetch(GAS_URL, {
     method: "POST",
-    body: JSON.stringify({ action, ...(payload || {}) }),
+    body: JSON.stringify({ action, token: authToken(), ...(payload || {}) }),
   });
-  return res.json();
+  return checkAuth(await res.json());
 }
 
 // ---------------- กันกดปุ่มบันทึกซ้ำ ----------------

@@ -1,6 +1,6 @@
 // Service worker: แคชเฉพาะ "app shell" (หน้าตาโปรแกรม) ให้เปิดแอปได้แม้เน็ตหลุด
 // ส่วนข้อมูล (เรียก GAS_URL) จะไปที่เครือข่ายเสมอ เพื่อให้เห็นข้อมูลล่าสุด
-const CACHE_NAME = "2kor-shell-v10"; // v9 -> v10: ผูก Code กับสินค้าหมวด "อื่นๆ" ได้
+const CACHE_NAME = "2kor-shell-v9"; // v8 -> v9: เพิ่มระบบเช็คสิทธิ์ (token) ให้ทุกคำขอไปหา GAS
 const SHELL_FILES = [
   "./",
   "./index.html",
