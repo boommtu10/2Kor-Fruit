@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>สั่งผลไม้ปอก - 2 กอ</title>
+<meta name="theme-color" content="#2F5233">
+<link rel="manifest" href="./manifest-order.json">
+<link rel="apple-touch-icon" href="./icons/apple-touch-icon.png">
+<link rel="icon" href="./icons/favicon-32.png">
+<link href="https://fonts.googleapis.com/css2?family=Kanit:wght@500;600&family=IBM+Plex+Sans+Thai:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box}body{margin:0;font-family:'IBM Plex Sans Thai',sans-serif;background:#faf6ef;color:#332f26;padding-bottom:90px}
+header{background:#2F5233;color:#fff;padding:calc(14px + env(safe-area-inset-top,0px)) 16px 14px;font-family:Kanit,sans-serif;font-size:18px}
+header small{display:block;font-family:inherit;font-size:12px;opacity:.85;margin-top:2px}
+#banner{display:none;background:#b23a3a;color:#fff;padding:10px 16px;font-size:14px}
+h2{font-family:Kanit,sans-serif;font-size:15px;color:#8a5a2b;margin:18px 16px 8px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;padding:0 16px}
+.card{background:#fff;border:1px solid #e7e2d6;border-radius:16px;overflow:hidden;padding:8px}
+.card img,.card .ph{width:100%;aspect-ratio:1;object-fit:cover;border-radius:12px;background:#eef1ea;display:flex;align-items:center;justify-content:center;font-size:30px}
+.nm{font-size:14px;font-weight:600;margin:8px 0 2px;line-height:1.25}.pr{color:#2F5233;font-weight:600}
+.step{display:flex;align-items:center;justify-content:space-between;margin-top:8px}
+.step button{width:34px;height:34px;border-radius:50%;border:1.5px solid #2F5233;background:#fff;color:#2F5233;font-size:20px;line-height:1}
+.step button.plus{background:#2F5233;color:#fff}.step span{font-weight:600;min-width:24px;text-align:center}
+#bar{position:fixed;left:0;right:0;bottom:0;background:#fff;border-top:1px solid #e7e2d6;padding:12px 16px calc(12px + env(safe-area-inset-bottom,0px));display:none}
+.btn{width:100%;border:none;border-radius:12px;background:#2F5233;color:#fff;font:600 16px 'IBM Plex Sans Thai',sans-serif;padding:14px}
+.btn:disabled{opacity:.5}
+#sheet{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;align-items:flex-end;z-index:5}
+#sheet .in{background:#faf6ef;width:100%;max-height:92dvh;overflow:auto;border-radius:20px 20px 0 0;padding:18px 16px calc(18px + env(safe-area-inset-bottom,0px))}
+label{display:block;font-size:13px;font-weight:600;margin:12px 0 4px}
+input,select,textarea{width:100%;font:16px 'IBM Plex Sans Thai',sans-serif;padding:11px;border:1.4px solid #d8d2c2;border-radius:10px;background:#fff}
+.seg{display:flex;gap:8px}.seg label{flex:1;margin:0;text-align:center;border:1.5px solid #d8d2c2;border-radius:10px;padding:11px;background:#fff}
+.seg input{display:none}.seg input:checked+span{color:#2F5233}.seg label:has(input:checked){border-color:#2F5233;background:#eaf1e6}
+.line{display:flex;justify-content:space-between;font-size:14px;padding:4px 0}.tot{border-top:1.5px solid #e7e2d6;margin-top:6px;padding-top:8px;font-weight:600}
+#err{color:#b23a3a;font-size:13px;margin:8px 0;min-height:16px}.hp{position:absolute;left:-9999px;opacity:0}
+#done{display:none;text-align:center;padding:40px 24px}#done b{font-size:22px;color:#2F5233}
+</style>
+</head>
+<body>
+<header><div id="shop">2 กอ ผลไม้ปอกพร้อมทาน</div><small id="hours">สั่งออนไลน์ รับเองหรือนัดส่ง</small></header>
+<div id="banner"></div>
+<div id="menu"><p style="padding:24px 16px">กำลังโหลดเมนู…</p></div>
+<div id="done"><b>ส่งออเดอร์แล้ว</b><p id="doneTxt"></p><button class="btn" onclick="location.reload()">สั่งเพิ่ม</button></div>
+<div id="bar"><button class="btn" id="cartBtn"></button></div>
+
+<div id="sheet"><div class="in">
+  <h2 style="margin:0 0 6px">ยืนยันออเดอร์</h2>
+  <div id="lines"></div>
+  <label>วิธีรับสินค้า</label>
+  <div class="seg"><label><input type="radio" name="m" value="รับเอง" checked><span>รับเองที่ร้าน</span></label><label><input type="radio" name="m" value="นัดส่ง"><span>นัดส่ง</span></label></div>
+  <label>วันที่</label><select id="day"></select>
+  <label>เวลา</label><select id="time"></select>
+  <label>ชื่อ</label><input id="name" maxlength="60" autocomplete="name">
+  <label>เบอร์โทร</label><input id="phone" inputmode="tel" maxlength="12" autocomplete="tel" placeholder="0812345678">
+  <div id="addrBox" style="display:none"><label>ที่อยู่จัดส่ง</label><textarea id="addr" rows="3" maxlength="200"></textarea>
+  <div style="font-size:12px;color:#7a7566;margin-top:4px">ร้านจะแจ้งค่าส่งอีกครั้งตอนยืนยันออเดอร์</div></div>
+  <label>หมายเหตุ (ไม่บังคับ)</label><input id="note" maxlength="200">
+  <input class="hp" id="website" tabindex="-1" autocomplete="off" aria-hidden="true">
+  <div id="err"></div>
+  <button class="btn" id="submit">ส่งออเดอร์</button>
+  <button class="btn" style="background:none;color:#332f26;margin-top:6px" onclick="sheet.style.display='none'">กลับไปแก้ตะกร้า</button>
+</div></div>
+<script src="./config.js"></script>
+<script>
+const $=id=>document.getElementById(id),sheet=$('sheet');
+let cfg=null,cart={};
+const baht=n=>'฿'+Number(n).toLocaleString('th-TH',{maximumFractionDigits:2});
+const pad=n=>String(n).padStart(2,'0');
+const fmt=d=>d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());
+const total=()=>cfg.menus.reduce((s,m)=>s+(cart[m.id]||0)*m.price,0);
+const count=()=>Object.values(cart).reduce((a,b)=>a+b,0);
+
+async function load(){
+  try{
+    const r=await (await fetch(GAS_URL+'?action=getPublicMenus')).json();
+    if(!r.menus)throw 0; cfg=r; render();
+  }catch(e){ $('menu').innerHTML='<p style="padding:24px 16px">โหลดเมนูไม่สำเร็จ กรุณารีเฟรชหน้านี้</p>'; }
+}
+function render(){
+  $('shop').textContent=cfg.shopName;
+  $('hours').textContent='รับออเดอร์นัดเวลา '+cfg.openTime+' - '+cfg.closeTime+' น.';
+  if(!cfg.open){$('banner').style.display='block';$('banner').textContent='ขณะนี้ร้านปิดรับออเดอร์ออนไลน์ชั่วคราว';}
+  const wrap=$('menu');wrap.innerHTML='';
+  if(!cfg.menus.length){wrap.innerHTML='<p style="padding:24px 16px">ยังไม่มีเมนูให้สั่งออนไลน์</p>';return;}
+  const groups={};cfg.menus.forEach(m=>(groups[m.category||'เมนูอื่นๆ']=groups[m.category||'เมนูอื่นๆ']||[]).push(m));
+  Object.keys(groups).forEach(cat=>{
+    const h=document.createElement('h2');h.textContent=cat;wrap.appendChild(h);
+    const g=document.createElement('div');g.className='grid';wrap.appendChild(g);
+    groups[cat].forEach(m=>{
+      const c=document.createElement('div');c.className='card';
+      const img=m.image?Object.assign(document.createElement('img'),{src:m.image,alt:''}):Object.assign(document.createElement('div'),{className:'ph',textContent:'🍉'});
+      const nm=Object.assign(document.createElement('div'),{className:'nm',textContent:m.name});
+      const pr=Object.assign(document.createElement('div'),{className:'pr',textContent:baht(m.price)});
+      const st=document.createElement('div');st.className='step';
+      const minus=Object.assign(document.createElement('button'),{textContent:'−'});
+      const q=Object.assign(document.createElement('span'),{textContent:'0'});
+      const plus=Object.assign(document.createElement('button'),{textContent:'+',className:'plus'});
+      const set=v=>{v=Math.max(0,Math.min(20,v));cart[m.id]=v;q.textContent=v;bar();};
+      minus.onclick=()=>set((cart[m.id]||0)-1);plus.onclick=()=>set((cart[m.id]||0)+1);
+      st.append(minus,q,plus);c.append(img,nm,pr,st);g.appendChild(c);
+    });
+  });
+}
+function bar(){
+  const n=count();$('bar').style.display=n&&cfg.open?'block':'none';
+  $('cartBtn').textContent='ดูตะกร้า ('+n+' ชิ้น) '+baht(total());
+}
+function slots(dayStr){
+  const [oh,om]=cfg.openTime.split(':').map(Number),[ch,cm]=cfg.closeTime.split(':').map(Number);
+  const earliest=Date.now()+(cfg.minLeadMinutes+1)*60000,out=[];
+  for(let t=oh*60+om;t<=ch*60+cm;t+=30){
+    const d=new Date(dayStr+'T'+pad(Math.floor(t/60))+':'+pad(t%60)+':00');
+    if(d.getTime()>=earliest)out.push(pad(Math.floor(t/60))+':'+pad(t%60));
+  }return out;
+}
+function fillDays(){
+  const s=$('day');s.innerHTML='';
+  for(let i=0;i<=cfg.maxDaysAhead;i++){
+    const d=new Date(Date.now()+i*86400000),v=fmt(d);
+    if(!slots(v).length)continue;
+    const o=document.createElement('option');o.value=v;
+    o.textContent=(i===0?'วันนี้ ':'')+d.toLocaleDateString('th-TH',{weekday:'short',day:'numeric',month:'short'});s.appendChild(o);
+  }
+  fillTimes();
+}
+function fillTimes(){
+  const s=$('time');s.innerHTML='';
+  slots($('day').value||fmt(new Date())).forEach(t=>{const o=document.createElement('option');o.value=o.textContent=t;s.appendChild(o);});
+}
+$('day').onchange=fillTimes;
+document.querySelectorAll('input[name=m]').forEach(r=>r.onchange=()=>$('addrBox').style.display=document.querySelector('input[name=m]:checked').value==='นัดส่ง'?'block':'none');
+$('cartBtn').onclick=()=>{
+  const L=$('lines');L.innerHTML='';
+  cfg.menus.filter(m=>cart[m.id]).forEach(m=>{
+    const d=document.createElement('div');d.className='line';
+    d.append(Object.assign(document.createElement('span'),{textContent:m.name+' x '+cart[m.id]}),Object.assign(document.createElement('span'),{textContent:baht(m.price*cart[m.id])}));L.appendChild(d);
+  });
+  const t=document.createElement('div');t.className='line tot';
+  t.append(Object.assign(document.createElement('span'),{textContent:'รวม (ยังไม่รวมค่าส่ง)'}),Object.assign(document.createElement('span'),{textContent:baht(total())}));L.appendChild(t);
+  try{const s=JSON.parse(localStorage.getItem('2kor_cust')||'{}');$('name').value=s.name||'';$('phone').value=s.phone||'';$('addr').value=s.addr||'';}catch(e){}
+  fillDays();$('err').textContent='';sheet.style.display='flex';
+};
+$('submit').onclick=async()=>{
+  const method=document.querySelector('input[name=m]:checked').value;
+  if(!$('time').value){$('err').textContent='ไม่มีเวลาว่างให้เลือก กรุณาเลือกวันอื่น';return;}
+  const body={action:'createOrder',name:$('name').value,phone:$('phone').value,method,when:$('day').value+' '+$('time').value,
+    address:$('addr').value,note:$('note').value,website:$('website').value,
+    items:Object.keys(cart).filter(k=>cart[k]>0).map(k=>({id:k,qty:cart[k]}))};
+  $('submit').disabled=true;$('submit').textContent='กำลังส่ง…';$('err').textContent='';
+  try{
+    const r=await (await fetch(GAS_URL,{method:'POST',body:JSON.stringify(body)})).json();
+    if(r.ok){
+      localStorage.setItem('2kor_cust',JSON.stringify({name:body.name,phone:body.phone,addr:body.address}));
+      sheet.style.display='none';$('menu').style.display='none';$('bar').style.display='none';
+      $('doneTxt').textContent='เลขออเดอร์ '+r.orderId+' ยอด '+baht(r.total)+' — ร้านจะติดต่อกลับทางเบอร์ที่ให้ไว้เพื่อยืนยันออเดอร์'+(method==='นัดส่ง'?'และแจ้งค่าส่ง':'')+' (รหัสติดตาม '+r.trackKey+')';
+      $('done').style.display='block';scrollTo(0,0);
+    }else $('err').textContent=r.error||'ส่งออเดอร์ไม่สำเร็จ';
+  }catch(e){$('err').textContent='เชื่อมต่อไม่ได้ กรุณาลองใหม่';}
+  $('submit').disabled=false;$('submit').textContent='ส่งออเดอร์';
+};
+if('serviceWorker' in navigator)navigator.serviceWorker.register('./sw.js').catch(()=>{});
+load();
+</script>
+</body>
+</html>
