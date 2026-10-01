@@ -1,6 +1,6 @@
 // Service worker: แคชเฉพาะ "app shell" (หน้าตาโปรแกรม) ให้เปิดแอปได้แม้เน็ตหลุด
 // ส่วนข้อมูล (เรียก GAS_URL) จะไปที่เครือข่ายเสมอ เพื่อให้เห็นข้อมูลล่าสุด
-const CACHE_NAME = "2kor-shell-v9"; // v8 -> v9: เพิ่มระบบเช็คสิทธิ์ (token) ให้ทุกคำขอไปหา GAS
+const CACHE_NAME = "2kor-shell-v10"; // v10: เพิ่มหน้าออเดอร์เข้า + แจ้งเตือน
 const SHELL_FILES = [
   "./",
   "./index.html",
@@ -57,4 +57,13 @@ self.addEventListener("fetch", (event) => {
       })
     );
   }
+});
+
+// แตะการแจ้งเตือนออเดอร์ -> เปิด/โฟกัสหน้าต่างแอปที่เปิดอยู่
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  event.waitUntil(self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((list) => {
+    for (const c of list) { if ("focus" in c) return c.focus(); }
+    return self.clients.openWindow("./");
+  }));
 });

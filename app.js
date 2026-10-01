@@ -1745,3 +1745,117 @@ window.addEventListener("appinstalled", () => {
     navigator.serviceWorker.register("./sw.js").catch(() => {});
   }
 })();
+
+// ============================================================
+// ออเดอร์ออนไลน์ (ฝั่งพนักงาน) — สร้าง UI ด้วย JS ทั้งหมด ไม่แก้ index.html
+// ============================================================
+const ORD = { list: [], seen: new Set(), soundOn: false, ctx: null, wake: null, baseTitle: document.title, firstLoad: true };
+
+(function buildOrdersUI() {
+  const css = document.createElement("style");
+  css.textContent = `.ord-bell{position:relative}.ord-badge{position:absolute;top:-4px;right:-4px;background:#d63a2f;color:#fff;border-radius:999px;font-size:11px;min-width:18px;height:18px;line-height:18px;text-align:center;padding:0 4px;display:none}
+  #ord-sound{position:fixed;left:12px;right:12px;bottom:calc(12px + env(safe-area-inset-bottom,0px));z-index:50;background:#d63a2f;color:#fff;border:none;border-radius:12px;padding:14px;font:600 15px inherit;font-family:inherit;display:none}
+  .ord-card{border:1px solid #e7e2d6;border-radius:14px;padding:12px;margin-bottom:10px;background:#fff}.ord-card.new{border-color:#d63a2f;background:#fff6f4}
+  .ord-top{display:flex;justify-content:space-between;font-weight:600}.ord-sub{font-size:13px;color:#6b665a;margin-top:4px}.ord-acts{display:flex;gap:8px;margin-top:10px}.ord-acts button{flex:1}`;
+  document.head.appendChild(css);
+
+  const mk = (id) => { const b = document.createElement("button"); b.className = "icon-btn ord-bell"; b.id = id; b.title = "ออเดอร์ออนไลน์"; b.innerHTML = '🧾<span class="ord-badge"></span>'; b.onclick = openOrders; return b; };
+  document.querySelector("#sales-screen .sm-actions").prepend(mk("btn-ord-sales"));
+  document.querySelector("#app .topbar").insertBefore(mk("btn-ord-admin"), document.getElementById("btn-low-stock"));
+
+  const modal = document.createElement("div");
+  modal.className = "modal-backdrop hidden"; modal.id = "modal-orders";
+  modal.innerHTML = '<div class="modal-sheet"><button class="modal-close" data-close-modal="modal-orders">✕</button><h3>ออเดอร์ออนไลน์</h3><div id="ord-list"></div></div>';
+  document.body.appendChild(modal);
+  modal.querySelector(".modal-close").onclick = () => closeModal("modal-orders");
+
+  const sb = document.createElement("button");
+  sb.id = "ord-sound"; sb.textContent = "แตะที่นี่เพื่อเปิดเสียงแจ้งเตือนออเดอร์";
+  sb.onclick = enableOrderAlerts; document.body.appendChild(sb);
+})();
+
+function openOrders() { renderOrders(); openModal("modal-orders"); }
+
+// เบราว์เซอร์บังคับให้ผู้ใช้ "แตะ" ก่อนถึงจะเล่นเสียง/ขอแจ้งเตือน/กันจอดับได้ จึงต้องมีปุ่มนี้
+async function enableOrderAlerts() {
+  try {
+    ORD.ctx = ORD.ctx || new (window.AudioContext || window.webkitAudioContext)();
+    await ORD.ctx.resume();
+    ORD.soundOn = true;
+    beep();
+    if ("Notification" in window && Notification.permission === "default") await Notification.requestPermission();
+    await keepScreenOn();
+    document.getElementById("ord-sound").style.display = "none";
+  } catch (e) { toast("เปิดเสียงไม่สำเร็จ ลองแตะอีกครั้ง", true); }
+}
+async function keepScreenOn() {
+  try { if ("wakeLock" in navigator && !ORD.wake) { ORD.wake = await navigator.wakeLock.request("screen"); ORD.wake.addEventListener("release", () => { ORD.wake = null; }); } } catch (e) {}
+}
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible" && ORD.soundOn) keepScreenOn(); });
+
+function beep() {
+  if (!ORD.soundOn || !ORD.ctx) return;
+  [0, 0.25, 0.5].forEach((t, i) => {
+    const o = ORD.ctx.createOscillator(), g = ORD.ctx.createGain();
+    o.frequency.value = i === 2 ? 1320 : 880; o.connect(g); g.connect(ORD.ctx.destination);
+    g.gain.setValueAtTime(0.4, ORD.ctx.currentTime + t); g.gain.exponentialRampToValueAtTime(0.001, ORD.ctx.currentTime + t + 0.2);
+    o.start(ORD.ctx.currentTime + t); o.stop(ORD.ctx.currentTime + t + 0.22);
+  });
+}
+
+async function pollOrders() {
+  if (!state.employee) return;
+  let list;
+  try { list = await apiGet("getOrders"); } catch (e) { return; }
+  if (!Array.isArray(list)) return;
+  ORD.list = list;
+  const fresh = list.filter(o => o.status === "รอรับ");
+  const brandNew = fresh.filter(o => !ORD.seen.has(o.id));
+  list.forEach(o => ORD.seen.add(o.id));
+
+  document.querySelectorAll(".ord-badge").forEach(b => { b.textContent = fresh.length; b.style.display = fresh.length ? "block" : "none"; });
+  document.title = fresh.length ? `(${fresh.length}) ออเดอร์ใหม่ — ` + ORD.baseTitle : ORD.baseTitle;
+  document.getElementById("ord-sound").style.display = (!ORD.soundOn && fresh.length) || (!ORD.soundOn) ? "block" : "none";
+
+  if (fresh.length) beep(); // ดังซ้ำทุกรอบ จนกว่าจะมีคนกดรับ
+  if (brandNew.length && "Notification" in window && Notification.permission === "granted" && document.hidden) {
+    const o = brandNew[0], msg = `${o.name} · ${o.items.length} รายการ · ฿${o.total}`;
+    navigator.serviceWorker.ready.then(r => r.showNotification("ออเดอร์ใหม่", { body: msg, tag: "new-order", renotify: true, requireInteraction: true })).catch(() => {});
+  }
+  if (!document.getElementById("modal-orders").classList.contains("hidden")) renderOrders();
+}
+setInterval(pollOrders, 15000);
+setTimeout(pollOrders, 2500);
+
+function renderOrders() {
+  const wrap = document.getElementById("ord-list");
+  wrap.innerHTML = "";
+  if (!ORD.list.length) { wrap.innerHTML = '<div class="empty-state">ไม่มีออเดอร์ค้าง</div>'; return; }
+  const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; };
+  ORD.list.forEach(o => {
+    const c = el("div", "ord-card" + (o.status === "รอรับ" ? " new" : ""));
+    const top = el("div", "ord-top"); top.append(el("span", "", `${o.id} · ${o.name}`), el("span", "", money(o.total)));
+    const phone = el("div", "ord-sub"); const a = el("a", "", o.phone); a.href = "tel:" + o.phone; phone.append("โทร ", a, ` · ${o.method} · นัด ${o.when}`);
+    c.append(top, phone);
+    if (o.address) c.append(el("div", "ord-sub", "ที่อยู่: " + o.address));
+    o.items.forEach(it => c.append(el("div", "ord-sub", `${it.name} x ${it.qty}`)));
+    if (o.note) c.append(el("div", "ord-sub", "หมายเหตุ: " + o.note));
+    c.append(el("div", "ord-sub", `สถานะ: ${o.status}${o.staff ? " (โดย " + o.staff + ")" : ""}`));
+    const next = { "รอรับ": [["รับออเดอร์", "รับแล้ว", "btn mango"], ["ยกเลิก", "ยกเลิก", "btn outline"]], "รับแล้ว": [["พร้อมรับ/กำลังส่ง", "พร้อมรับ/กำลังส่ง", "btn"], ["เสร็จสิ้น", "เสร็จสิ้น", "btn outline"]], "พร้อมรับ/กำลังส่ง": [["เสร็จสิ้น", "เสร็จสิ้น", "btn"]] }[o.status] || [];
+    const acts = el("div", "ord-acts");
+    next.forEach(([label, status, cls]) => {
+      const b = el("button", cls, label); b.type = "button";
+      b.onclick = async () => {
+        if (status === "ยกเลิก" && !confirm("ยกเลิกออเดอร์นี้?")) return;
+        b.disabled = true;
+        const res = await apiPost("updateOrder", { orderId: o.id, status });
+        if (res.ok) { toast(res.failed && res.failed.length ? "รับแล้ว แต่บันทึกขายไม่ครบ: " + res.failed.join(", ") + " — กรุณาบันทึกเองในโหมดขาย" : "อัปเดตแล้ว", !!(res.failed && res.failed.length)); }
+        else toast(res.error || "อัปเดตไม่สำเร็จ", true);
+        await pollOrders(); renderOrders();
+      };
+      acts.appendChild(b);
+    });
+    if (next.length) c.append(acts);
+    wrap.appendChild(c);
+  });
+}
