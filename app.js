@@ -2032,7 +2032,7 @@ function renderShop(d) {
 // ---- พิมพ์ใบออเดอร์ (เครื่องพิมพ์สลิปกระดาษหน้ากว้าง 57 mm) ----
 // ปรับได้ที่นี่: PAPER = ความกว้างกระดาษ, CONTENT = ความกว้างเนื้อหาที่พิมพ์จริง
 // (เครื่อง 57/58mm ส่วนใหญ่พิมพ์ได้จริงราว 48-52mm ถ้าตัวหนังสือขอบขาด ให้ลดค่า CONTENT)
-const ORD_PRINT = { PAPER: "57mm", CONTENT: "50mm", SHOP: "2 กอ ผลไม้ปอกพร้อมทาน", LOGO: "./icons/logo-256.png" };
+const ORD_PRINT = { PAPER: "57mm", CONTENT: "46mm", EXTRA_MM: 6, FIXED_HEIGHT_MM: 0, SHOP: "2 กอ ผลไม้ปอกพร้อมทาน", LOGO: "./icons/logo-256.png" };
 
 function printOrder(o) {
   const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -2044,7 +2044,7 @@ function printOrder(o) {
     (it.fruits && it.fruits.length ? `<div class="fr">ผลไม้: ${esc(it.fruits.join(", "))}</div>` : "") + `</div>`).join("");
   const line = (k, v) => v ? `<div class="kv"><b>${k}</b> ${esc(v)}</div>` : "";
   const html = `<!DOCTYPE html><html lang="th"><head><meta charset="UTF-8"><title>${esc(o.id)}</title><style>
-@page{size:${ORD_PRINT.PAPER} auto;margin:0}
+@page{margin:0}
 *{box-sizing:border-box}
 html,body{margin:0;padding:0;background:#fff}
 body{width:${ORD_PRINT.CONTENT};margin:0 auto;padding:2mm 0 6mm;color:#000;font-family:"Noto Sans Thai","Sarabun","IBM Plex Sans Thai",sans-serif;font-size:12px;line-height:1.35}
@@ -2080,12 +2080,20 @@ ${o.method === "นัดส่ง" ? '<div class="sub">* ยังไม่ร�
 </body></html>`;
 
   const fr = document.createElement("iframe");
-  fr.style.cssText = "position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden";
+  fr.style.cssText = "position:fixed;right:0;bottom:0;width:57mm;height:10px;border:0;visibility:hidden";
   document.body.appendChild(fr);
   const doc = fr.contentDocument; doc.open(); doc.write(html); doc.close();
   const cleanup = () => setTimeout(() => fr.remove(), 1000);
   const go = () => {
     if (go.done) return; go.done = true;
+    // ตั้งความยาวกระดาษเป็นตัวเลขจริงตามความสูงเนื้อหา (วัดหลังโหลดโลโก้แล้ว)
+    // เดิมใช้ "size: 57mm auto" ซึ่งเป็นค่าที่ไม่ถูกต้องตามมาตรฐาน CSS เบราว์เซอร์จึงทิ้งทั้งบรรทัด
+    // แล้วใช้ความยาวกระดาษเริ่มต้นของไดรเวอร์เครื่องพิมพ์แทน ทำให้ใบถูกตัดท้าย
+    try {
+      const mm = ORD_PRINT.FIXED_HEIGHT_MM || Math.max(40, Math.ceil(doc.body.scrollHeight * 25.4 / 96) + ORD_PRINT.EXTRA_MM);
+      const st = doc.createElement("style"); st.textContent = "@page{size:" + ORD_PRINT.PAPER + " " + mm + "mm;margin:0}html,body{height:auto}";
+      doc.head.appendChild(st);
+    } catch (e) {}
     try { fr.contentWindow.focus(); fr.contentWindow.onafterprint = cleanup; fr.contentWindow.print(); }
     catch (e) { toast("สั่งพิมพ์ไม่สำเร็จ", true); cleanup(); return; }
     setTimeout(() => fr.remove(), 120000);

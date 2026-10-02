@@ -46,6 +46,7 @@ h2 .ct{font-size:12px;color:#b23a3a;font-family:'IBM Plex Sans Thai',sans-serif;
 #welcome .in{background:#fff;border-radius:20px;max-width:360px;width:100%;padding:24px 20px;text-align:center}
 #welcome .ic{font-size:44px;line-height:1}#welcome h3{font-family:Kanit,sans-serif;font-size:20px;margin:10px 0 6px}
 #welcome p{white-space:pre-line;margin:6px 0;font-size:14px;color:#4a463c}#welcome .nt{background:#faf6ef;border-radius:10px;padding:10px;margin:12px 0;font-size:14px;font-weight:600}
+.locked .step button,.locked .card .btn{pointer-events:none;opacity:.35;filter:grayscale(1)}
 </style>
 </head>
 <body>
@@ -92,15 +93,38 @@ const count=()=>Object.values(cart).reduce((a,b)=>a+b,0)+picks.reduce((s,p)=>s+p
 async function load(){
   try{
     const r=await (await fetch(GAS_URL+'?action=getPublicMenus')).json();
-    if(!r.menus)throw 0; cfg=r; render(); showWelcome();
+    if(!r.menus)throw 0; cfg=r; cfg.skew=(r.nowMs||Date.now())-Date.now(); render(); lastHs=hoursNow(); showWelcome(); applyLock();
   }catch(e){ $('menu').innerHTML='<p style="padding:24px 16px">โหลดเมนูไม่สำเร็จ กรุณารีเฟรชหน้านี้</p>'; }
 }
-function canOrder(){return cfg.open;}
+let lastHs=null;
+function hoursNow(){
+  const t=new Date(Date.now()+(cfg.skew||0)),hm=t.toLocaleTimeString('en-GB',{timeZone:'Asia/Bangkok',hour:'2-digit',minute:'2-digit',hourCycle:'h23'});
+  return hm<cfg.openTime?'before':hm>cfg.cutoffTime?'after':hm>cfg.closeTime?'late':'open';
+}
+function canOrder(){const h=hoursNow();return cfg.open&&(h==='open'||h==='late');}
+function hoursMsg(){const h=hoursNow();return h==='before'?'ร้านเปิด '+cfg.openTime.replace(':','.'):h==='after'?'ปิดร้านแล้วค่ะ':'';}
+function updateBanner(){
+  const b=$('banner'),sh=cfg.shop||{};let t=hoursMsg();
+  if(!t&&hoursNow()==='late')t='ร้านปิดแล้ว — รับสั่งล่วงหน้าสำหรับวันถัดไปได้ถึง '+cfg.cutoffTime.replace(':','.')+' น.';
+  if(!t&&!cfg.open)t='ขณะนี้ร้านปิดรับออเดอร์ออนไลน์ชั่วคราว';
+  if(!t&&sh.closedToday)t='วันนี้ร้านปิด — เลือกนัดวันอื่นได้';
+  b.style.display=t?'block':'none';b.textContent=t;
+}
+// ล็อกการสั่งทั้งหมดนอกเวลา: ซ่อนตะกร้า ปิดปุ่มทุกปุ่มในเมนู ปิดหน้าต่างตะกร้า/เลือกผลไม้ที่เปิดค้างไว้
+function applyLock(){
+  const ok=canOrder(),hs=hoursNow();
+  $('menu').classList.toggle('locked',!ok);updateBanner();bar();
+  if(!ok){sheet.style.display='none';$('pickSheet').style.display='none';}
+  if(hs!==lastHs){lastHs=hs;showWelcome();}
+}
+setInterval(()=>{if(cfg)applyLock();},15000);
 const closedOn=v=>((cfg.shop&&cfg.shop.closedRanges)||[]).some(r=>v>=r[0]&&v<=r[1]);
 const thDay=v=>new Date(v+'T12:00:00').toLocaleDateString('th-TH',{day:'numeric',month:'short'});
 const rangeTxt=r=>r[0]===r[1]?thDay(r[0]):thDay(r[0])+' – '+thDay(r[1]);
 function showWelcome(){
-  const sh=cfg.shop||{},closed=!!sh.closedToday,paused=!cfg.open;
+  const sh=cfg.shop||{},closed=!!sh.closedToday,paused=!cfg.open,hm=hoursMsg();
+  if(hm){$('wIc').textContent='🔴';$('wTitle').textContent=hm;$('wBody').textContent='เวลารับออเดอร์ '+cfg.openTime.replace(':','.')+' - '+cfg.closeTime.replace(':','.')+' น.';const n0=$('wNote');n0.textContent=sh.note||'';n0.style.display=sh.note?'block':'none';welcome.style.display='flex';return;}
+  if(hoursNow()==='late'&&!paused){$('wIc').textContent='🌙';$('wTitle').textContent='ร้านปิดแล้ว';$('wBody').textContent='ยังสั่งล่วงหน้าสำหรับวันถัดไปได้ถึง '+cfg.cutoffTime.replace(':','.')+' น.';const n1=$('wNote');n1.textContent=sh.note||'';n1.style.display=sh.note?'block':'none';welcome.style.display='flex';return;}
   $('wIc').textContent=closed||paused?'🔴':'🟢';
   $('wTitle').textContent=paused?'ร้านปิดรับออเดอร์ออนไลน์ชั่วคราว':closed?'วันนี้ร้านปิด':'วันนี้ร้านเปิด';
   $('wBody').textContent=paused?'กรุณากลับมาสั่งใหม่ภายหลัง':closed?'ขออภัย วันนี้ร้านปิดทำการ สั่งนัดวันอื่นได้':'รับออเดอร์นัดเวลา '+cfg.openTime+' - '+cfg.closeTime+' น.';
@@ -111,8 +135,7 @@ function showWelcome(){
 function render(){
   $('shop').textContent=cfg.shopName;
   $('hours').textContent='รับออเดอร์นัดเวลา '+cfg.openTime+' - '+cfg.closeTime+' น.';
-  if(!cfg.open){$('banner').style.display='block';$('banner').textContent='ขณะนี้ร้านปิดรับออเดอร์ออนไลน์ชั่วคราว';}
-  else if(cfg.shop&&cfg.shop.closedToday){$('banner').style.display='block';$('banner').textContent='วันนี้ร้านปิด — เลือกนัดวันอื่นได้';}
+  updateBanner();
   const wrap=$('menu');wrap.innerHTML='';
   if(!cfg.menus.length){wrap.innerHTML='<p style="padding:24px 16px">ยังไม่มีเมนูให้สั่งออนไลน์</p>';return;}
   const groups={};cfg.menus.forEach(m=>(groups[m.category||'เมนูอื่นๆ']=groups[m.category||'เมนูอื่นๆ']||[]).push(m));
@@ -131,7 +154,7 @@ function render(){
       const q=Object.assign(document.createElement('span'),{textContent:'0'});
       const plus=Object.assign(document.createElement('button'),{textContent:'+',className:'plus'});
       if(m.soldOut){c.classList.add('out');c.append(img,nm,pr,Object.assign(document.createElement('div'),{className:'soldtag',textContent:'หมดชั่วคราว'}));g.appendChild(c);return;}
-      const set=v=>{v=Math.max(0,Math.min(m.maxQty||20,v));cart[m.id]=v;q.textContent=v;bar();};
+      const set=v=>{if(!canOrder())return;v=Math.max(0,Math.min(m.maxQty||20,v));cart[m.id]=v;q.textContent=v;bar();};
       minus.onclick=()=>set((cart[m.id]||0)-1);plus.onclick=()=>set((cart[m.id]||0)+1);
       if(m.pickMax>0){
         const pb=Object.assign(document.createElement('button'),{className:'btn',textContent:cfg.fruits.length?'เลือกผลไม้':'วันนี้ยังไม่เปิดให้เลือก',disabled:!cfg.fruits.length});
@@ -171,6 +194,7 @@ function fillTimes(){
 $('day').onchange=fillTimes;
 document.querySelectorAll('input[name=m]').forEach(r=>r.onchange=()=>$('addrBox').style.display=document.querySelector('input[name=m]:checked').value==='นัดส่ง'?'block':'none');
 $('cartBtn').onclick=()=>{
+  if(!canOrder()){applyLock();return;}
   const L=$('lines');L.innerHTML='';
   cfg.menus.filter(m=>cart[m.id]).forEach(m=>{
     const d=document.createElement('div');d.className='line';
@@ -188,6 +212,7 @@ $('cartBtn').onclick=()=>{
   fillDays();$('err').textContent='';sheet.style.display='flex';
 };
 $('submit').onclick=async()=>{
+  if(!canOrder()){applyLock();return;}
   const method=document.querySelector('input[name=m]:checked').value;
   if(!$('time').value){$('err').textContent='ไม่มีเวลาว่างให้เลือก กรุณาเลือกวันอื่น';return;}
   const body={action:'createOrder',name:$('name').value,phone:$('phone').value,method,when:$('day').value+' '+$('time').value,
@@ -208,6 +233,7 @@ $('submit').onclick=async()=>{
 };
 let pickM=null;
 function openPick(m){
+  if(!canOrder()){applyLock();return;}
   pickM=m;$('pickTitle').textContent=m.name+' — เลือกได้สูงสุด '+m.pickMax+' ชนิด';
   const box=$('pickBox');box.innerHTML='';
   cfg.fruits.forEach(f=>{
