@@ -1760,7 +1760,15 @@ const ORD = { list: [], seen: new Set(), soundOn: false, ctx: null, wake: null, 
   #ord-page,#fruit-page{position:fixed;inset:0;z-index:60;background:#faf6ef;display:none;flex-direction:column}#ord-page.show,#fruit-page.show{display:flex}
   .ord-head{display:flex;align-items:center;gap:12px;background:#2F5233;color:#fff;padding:calc(12px + env(safe-area-inset-top,0px)) 16px 12px;flex-shrink:0}.ord-title{font-weight:700;font-size:18px;flex:1}
   #ord-list,#fruit-list{flex:1;overflow:auto;padding:14px 16px 96px;width:100%;max-width:1100px;margin:0 auto}.ord-h{margin:16px 0 8px;font-size:15px;color:#8a5a2b}.ord-h.late{color:#d63a2f}
-  .ord-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px}.ord-grid .ord-card{margin:0}`;
+  .ord-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px}.ord-grid .ord-card{margin:0}
+  .ord-acts button.ord-print{flex:0 0 auto;padding-left:14px;padding-right:14px;white-space:nowrap}
+  #app .topbar .ord-tb-actions{display:flex;align-items:center;gap:8px;margin-left:auto;flex-shrink:0}
+  #app .topbar .ord-tb-title{min-width:0;flex:1 1 0;line-height:1.3}
+  #app .topbar .ord-tb-title,#app .topbar .ord-tb-title>*{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  @media(max-width:700px){
+    #app .topbar{flex-wrap:wrap;height:auto!important;min-height:0;row-gap:8px;align-items:center;padding-top:calc(10px + env(safe-area-inset-top,0px));padding-bottom:10px}
+    #app .topbar .ord-tb-actions{order:9;flex:1 0 100%;margin-left:0;justify-content:space-between;gap:6px}
+  }`;
   document.head.appendChild(css);
 
   const mk = (id) => { const b = document.createElement("button"); b.className = "icon-btn ord-bell"; b.id = id; b.title = "ออเดอร์ออนไลน์"; b.innerHTML = '🧾<span class="ord-badge"></span>'; b.onclick = openOrders; return b; };
@@ -1770,6 +1778,16 @@ const ORD = { list: [], seen: new Set(), soundOn: false, ctx: null, wake: null, 
   const mf = (id) => { const b = document.createElement("button"); b.className = "icon-btn"; b.id = id; b.title = "ผลไม้วันนี้"; b.textContent = "🍉"; b.onclick = openFruits; return b; };
   document.querySelector("#sales-screen .sm-actions").prepend(mf("btn-fr-sales"));
   document.querySelector("#app .topbar").insertBefore(mf("btn-fr-admin"), document.getElementById("btn-ord-admin"));
+  // จัดโครงแถบบน: ชื่อร้านย่อได้ (ไม่โดนบีบเป็นแนวตั้ง) + ปุ่มทั้งหมดไปอยู่แถวเดียวกัน (มือถือขึ้นแถวล่าง)
+  (function fixTopbar() {
+    const tb = document.querySelector("#app .topbar"), emp = document.getElementById("topbar-emp");
+    if (!tb) return;
+    if (emp) (emp.parentElement !== tb ? emp.parentElement : emp).classList.add("ord-tb-title");
+    const btns = Array.from(tb.children).filter(c => c.tagName === "BUTTON" && c.id !== "btn-menu-toggle");
+    if (!btns.length) return;
+    const wrap = document.createElement("div"); wrap.className = "ord-tb-actions";
+    tb.insertBefore(wrap, btns[0]); btns.forEach(b => wrap.appendChild(b));
+  })();
   const page = document.createElement("div");
   page.id = "ord-page";
   page.innerHTML = '<div class="ord-head"><button class="icon-btn" id="ord-back" title="กลับ">‹</button><div class="ord-title">ออเดอร์ออนไลน์</div></div><div id="ord-list"></div>';
@@ -1877,8 +1895,75 @@ function orderCard(o) {
     };
     acts.appendChild(b);
   });
-  if (next.length) c.append(acts);
+  const pb = el("button", "btn outline ord-print", "🖨 พิมพ์"); pb.type = "button"; pb.onclick = () => printOrder(o);
+  acts.appendChild(pb);
+  c.append(acts);
   return c;
+}
+
+// ---- พิมพ์ใบออเดอร์ (เครื่องพิมพ์สลิปกระดาษหน้ากว้าง 57 mm) ----
+// ปรับได้ที่นี่: PAPER = ความกว้างกระดาษ, CONTENT = ความกว้างเนื้อหาที่พิมพ์จริง
+// (เครื่อง 57/58mm ส่วนใหญ่พิมพ์ได้จริงราว 48-52mm ถ้าตัวหนังสือขอบขาด ให้ลดค่า CONTENT)
+const ORD_PRINT = { PAPER: "57mm", CONTENT: "50mm", SHOP: "2 กอ ผลไม้ปอกพร้อมทาน", LOGO: "./icons/logo-256.png" };
+
+function printOrder(o) {
+  const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const logo = new URL(ORD_PRINT.LOGO, location.href).href;
+  const qtyAll = o.items.reduce((s, it) => s + it.qty, 0);
+  const rows = o.items.map(it =>
+    `<div class="it"><div class="r"><span>${esc(it.name)}</span></div>` +
+    `<div class="r"><span>&nbsp;&nbsp;${money(it.price)} x ${it.qty}</span><span>${money(it.price * it.qty)}</span></div>` +
+    (it.fruits && it.fruits.length ? `<div class="fr">ผลไม้: ${esc(it.fruits.join(", "))}</div>` : "") + `</div>`).join("");
+  const line = (k, v) => v ? `<div class="kv"><b>${k}</b> ${esc(v)}</div>` : "";
+  const html = `<!DOCTYPE html><html lang="th"><head><meta charset="UTF-8"><title>${esc(o.id)}</title><style>
+@page{size:${ORD_PRINT.PAPER} auto;margin:0}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;background:#fff}
+body{width:${ORD_PRINT.CONTENT};margin:0 auto;padding:2mm 0 6mm;color:#000;font-family:"Noto Sans Thai","Sarabun","IBM Plex Sans Thai",sans-serif;font-size:12px;line-height:1.35}
+.c{text-align:center}.logo{display:block;margin:0 auto 3px;width:22mm;height:auto;filter:grayscale(1) contrast(1.6)}
+.shop{font-size:15px;font-weight:700;text-align:center}.sub{text-align:center;font-size:11px}
+.hr{border:0;border-top:1px dashed #000;margin:5px 0}.hr2{border:0;border-top:2px solid #000;margin:5px 0}
+.id{font-size:16px;font-weight:700;text-align:center}
+.kv{word-break:break-word}.kv b{font-weight:700}
+.it{margin-bottom:4px}.r{display:flex;justify-content:space-between;gap:6px}.r span:last-child{white-space:nowrap}
+.fr{padding-left:8px;font-size:11px;word-break:break-word}
+.tot{font-size:16px;font-weight:700}
+.note{border:1px solid #000;padding:2px 4px;margin-top:3px;word-break:break-word}
+</style></head><body>
+<img class="logo" id="logo" src="${esc(logo)}" alt="">
+<div class="shop">${esc(ORD_PRINT.SHOP)}</div>
+<div class="sub">ใบออเดอร์ออนไลน์</div>
+<hr class="hr2">
+<div class="id">${esc(o.id)}</div>
+<div class="c">${esc(o.method)}</div>
+<hr class="hr">
+${line("ลูกค้า:", o.name)}${line("โทร:", o.phone)}${line("นัดรับ/ส่ง:", o.when)}${line("สั่งเมื่อ:", o.createdAt)}${line("ที่อยู่:", o.address)}
+${o.note ? `<div class="note"><b>หมายเหตุ:</b> ${esc(o.note)}</div>` : ""}
+<hr class="hr">
+<div><b>รายการ</b></div>
+${rows}
+<hr class="hr">
+<div class="r"><span>รวมทั้งหมด ${qtyAll} ชิ้น</span></div>
+<div class="r tot"><span>ยอดรวม</span><span>${money(o.total)}</span></div>
+${o.method === "นัดส่ง" ? '<div class="sub">* ยังไม่รวมค่าส่ง</div>' : ""}
+<hr class="hr">
+<div class="sub">${o.staff ? "ผู้รับออเดอร์: " + esc(o.staff) + "<br>" : ""}พิมพ์ ${esc(new Date().toLocaleString("th-TH", { dateStyle: "short", timeStyle: "short" }))}</div>
+<div class="c" style="margin-top:4px">ขอบคุณที่อุดหนุนค่ะ</div>
+</body></html>`;
+
+  const fr = document.createElement("iframe");
+  fr.style.cssText = "position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden";
+  document.body.appendChild(fr);
+  const doc = fr.contentDocument; doc.open(); doc.write(html); doc.close();
+  const cleanup = () => setTimeout(() => fr.remove(), 1000);
+  const go = () => {
+    if (go.done) return; go.done = true;
+    try { fr.contentWindow.focus(); fr.contentWindow.onafterprint = cleanup; fr.contentWindow.print(); }
+    catch (e) { toast("สั่งพิมพ์ไม่สำเร็จ", true); cleanup(); return; }
+    setTimeout(() => fr.remove(), 120000);
+  };
+  const img = doc.getElementById("logo");
+  if (img && !img.complete) { img.onload = img.onerror = go; setTimeout(go, 2000); } else setTimeout(go, 150);
 }
 
 // ---- ผลไม้วันนี้: เปิด/ปิดว่าวันนี้มีผลไม้ชนิดไหน (ลูกค้าเลือกได้เฉพาะที่เปิดอยู่) ----
