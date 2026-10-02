@@ -1823,6 +1823,7 @@ async function enableOrderAlerts() {
     ORD.ctx = ORD.ctx || new (window.AudioContext || window.webkitAudioContext)();
     await ORD.ctx.resume();
     ORD.soundOn = true;
+    await loadAlertSound();
     beep();
     if ("Notification" in window && Notification.permission === "default") await Notification.requestPermission();
     await keepScreenOn();
@@ -1834,14 +1835,36 @@ async function keepScreenOn() {
 }
 document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible" && ORD.soundOn) keepScreenOn(); });
 
-function beep() {
-  if (!ORD.soundOn || !ORD.ctx) return;
+// เสียงแจ้งเตือนออเดอร์: เล่นไฟล์ order-alert.mp3 ผ่าน Web Audio (ปรับความดังได้ ไม่ติดปัญหา autoplay/range)
+// ถ้าโหลดไฟล์ไม่ได้จะถอยกลับไปใช้เสียงบี๊บสังเคราะห์เดิม
+const ALERT_GAIN = 1.8; // เพิ่ม/ลดความดัง (1 = เท่าไฟล์ต้นฉบับ) ถ้าเสียงแตกให้ลดลง
+async function loadAlertSound() {
+  if (ORD.buf || ORD.bufLoading || !ORD.ctx) return;
+  ORD.bufLoading = true;
+  try {
+    const r = await fetch("./order-alert.mp3");
+    ORD.buf = await ORD.ctx.decodeAudioData(await r.arrayBuffer());
+  } catch (e) { ORD.buf = null; }
+  ORD.bufLoading = false;
+}
+function beepFallback() {
   [0, 0.25, 0.5].forEach((t, i) => {
     const o = ORD.ctx.createOscillator(), g = ORD.ctx.createGain();
     o.frequency.value = i === 2 ? 1320 : 880; o.connect(g); g.connect(ORD.ctx.destination);
     g.gain.setValueAtTime(0.4, ORD.ctx.currentTime + t); g.gain.exponentialRampToValueAtTime(0.001, ORD.ctx.currentTime + t + 0.2);
     o.start(ORD.ctx.currentTime + t); o.stop(ORD.ctx.currentTime + t + 0.22);
   });
+}
+function beep() {
+  if (!ORD.soundOn || !ORD.ctx) return;
+  if (!ORD.buf) { loadAlertSound(); beepFallback(); return; }
+  if (ORD.playing) return; // ยังเล่นรอบก่อนไม่จบ ไม่ซ้อนกัน
+  const src = ORD.ctx.createBufferSource(), g = ORD.ctx.createGain(), lim = ORD.ctx.createDynamicsCompressor();
+  src.buffer = ORD.buf; g.gain.value = ALERT_GAIN;
+  lim.threshold.value = -6; lim.ratio.value = 12; lim.attack.value = 0.003; lim.release.value = 0.15; // กันเสียงแตกเวลาเร่งความดัง
+  src.connect(g); g.connect(lim); lim.connect(ORD.ctx.destination);
+  ORD.playing = true; src.onended = () => { ORD.playing = false; };
+  src.start();
 }
 
 async function pollOrders() {
