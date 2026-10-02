@@ -45,7 +45,7 @@ h2 .ct{font-size:12px;color:#b23a3a;font-family:'IBM Plex Sans Thai',sans-serif;
 #welcome{position:fixed;inset:0;background:rgba(0,0,0,.5);display:none;align-items:center;justify-content:center;z-index:30;padding:24px}
 #welcome .in{background:#fff;border-radius:20px;max-width:360px;width:100%;padding:24px 20px;text-align:center}
 #welcome .ic{font-size:44px;line-height:1}#welcome h3{font-family:Kanit,sans-serif;font-size:20px;margin:10px 0 6px}
-#welcome p{margin:6px 0;font-size:14px;color:#4a463c}#welcome .nt{background:#faf6ef;border-radius:10px;padding:10px;margin:12px 0;font-size:14px;font-weight:600}
+#welcome p{white-space:pre-line;margin:6px 0;font-size:14px;color:#4a463c}#welcome .nt{background:#faf6ef;border-radius:10px;padding:10px;margin:12px 0;font-size:14px;font-weight:600}
 </style>
 </head>
 <body>
@@ -95,11 +95,16 @@ async function load(){
     if(!r.menus)throw 0; cfg=r; render(); showWelcome();
   }catch(e){ $('menu').innerHTML='<p style="padding:24px 16px">โหลดเมนูไม่สำเร็จ กรุณารีเฟรชหน้านี้</p>'; }
 }
+function canOrder(){return cfg.open;}
+const closedOn=v=>((cfg.shop&&cfg.shop.closedRanges)||[]).some(r=>v>=r[0]&&v<=r[1]);
+const thDay=v=>new Date(v+'T12:00:00').toLocaleDateString('th-TH',{day:'numeric',month:'short'});
+const rangeTxt=r=>r[0]===r[1]?thDay(r[0]):thDay(r[0])+' – '+thDay(r[1]);
 function showWelcome(){
   const sh=cfg.shop||{},closed=!!sh.closedToday,paused=!cfg.open;
   $('wIc').textContent=closed||paused?'🔴':'🟢';
   $('wTitle').textContent=paused?'ร้านปิดรับออเดอร์ออนไลน์ชั่วคราว':closed?'วันนี้ร้านปิด':'วันนี้ร้านเปิด';
-  $('wBody').textContent=paused?'กรุณากลับมาสั่งใหม่ภายหลัง':closed?'ขออภัย วันนี้ร้านปิดทำการ สั่งล่วงหน้าสำหรับวันถัดไปได้':'รับออเดอร์นัดเวลา '+cfg.openTime+' - '+cfg.closeTime+' น.';
+  $('wBody').textContent=paused?'กรุณากลับมาสั่งใหม่ภายหลัง':closed?'ขออภัย วันนี้ร้านปิดทำการ สั่งนัดวันอื่นได้':'รับออเดอร์นัดเวลา '+cfg.openTime+' - '+cfg.closeTime+' น.';
+  const rg=sh.closedRanges||[];if(!paused&&rg.length)$('wBody').textContent+='\nวันที่ร้านหยุด: '+rg.map(rangeTxt).join(', ');
   const n=$('wNote');n.textContent=sh.note||'';n.style.display=sh.note?'block':'none';
   welcome.style.display='flex';
 }
@@ -107,7 +112,7 @@ function render(){
   $('shop').textContent=cfg.shopName;
   $('hours').textContent='รับออเดอร์นัดเวลา '+cfg.openTime+' - '+cfg.closeTime+' น.';
   if(!cfg.open){$('banner').style.display='block';$('banner').textContent='ขณะนี้ร้านปิดรับออเดอร์ออนไลน์ชั่วคราว';}
-  else if(cfg.shop&&cfg.shop.closedToday){$('banner').style.display='block';$('banner').textContent='วันนี้ร้านปิด — สั่งล่วงหน้าสำหรับวันถัดไปได้';}
+  else if(cfg.shop&&cfg.shop.closedToday){$('banner').style.display='block';$('banner').textContent='วันนี้ร้านปิด — เลือกนัดวันอื่นได้';}
   const wrap=$('menu');wrap.innerHTML='';
   if(!cfg.menus.length){wrap.innerHTML='<p style="padding:24px 16px">ยังไม่มีเมนูให้สั่งออนไลน์</p>';return;}
   const groups={};cfg.menus.forEach(m=>(groups[m.category||'เมนูอื่นๆ']=groups[m.category||'เมนูอื่นๆ']||[]).push(m));
@@ -137,7 +142,7 @@ function render(){
   });
 }
 function bar(){
-  const n=count();$('bar').style.display=n&&cfg.open?'block':'none';
+  const n=count();$('bar').style.display=n&&canOrder()?'block':'none';
   $('cartBtn').textContent='ดูตะกร้า ('+n+' ชิ้น) '+baht(total());
 }
 function slots(dayStr){
@@ -151,8 +156,8 @@ function slots(dayStr){
 function fillDays(){
   const s=$('day');s.innerHTML='';
   for(let i=0;i<=cfg.maxDaysAhead;i++){
-    if(i===0&&cfg.shop&&cfg.shop.closedToday)continue;
     const d=new Date(Date.now()+i*86400000),v=fmt(d);
+    if(closedOn(v))continue;
     if(!slots(v).length)continue;
     const o=document.createElement('option');o.value=v;
     o.textContent=(i===0?'วันนี้ ':'')+d.toLocaleDateString('th-TH',{weekday:'short',day:'numeric',month:'short'});s.appendChild(o);

@@ -1765,6 +1765,7 @@ const ORD = { list: [], seen: new Set(), soundOn: false, ctx: null, wake: null, 
   .shp-seg{display:flex;gap:8px;margin-bottom:10px}.shp-seg button{flex:1;padding:12px;border-radius:10px;border:1.5px solid #d8d2c2;background:#fff;font:600 15px inherit;font-family:inherit}
   .shp-seg button.on{background:#2F5233;border-color:#2F5233;color:#fff}.shp-seg button.off{background:#d63a2f;border-color:#d63a2f;color:#fff}
   .shp-note{display:flex;gap:8px}.shp-note input{flex:1;min-width:0;padding:10px;border:1.4px solid #d8d2c2;border-radius:9px;font:inherit}
+  .shp-dates{display:flex;gap:10px;margin-bottom:10px}.shp-dt{flex:1;min-width:0}.shp-dt label{display:block;font-size:12.5px;color:#6b665a;margin-bottom:4px}.shp-dt input{width:100%;padding:10px;border:1.4px solid #d8d2c2;border-radius:9px;font:inherit;background:#fff}
   .shp-cat{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px}.shp-cat b{font-size:15px;color:#8a5a2b}
   .shp-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 0;border-top:1px solid #eee}.shp-row span{flex:1;min-width:0}
   .shp-sw{border:none;border-radius:999px;padding:8px 14px;font:600 13px inherit;font-family:inherit;background:#dcefd8;color:#2F5233;white-space:nowrap}
@@ -1950,14 +1951,41 @@ function renderShop(d) {
   const bOpen = el("button", d.shopClosed ? "" : "on", "เปิดร้าน"), bClose = el("button", d.shopClosed ? "off" : "", "ปิดร้านวันนี้");
   bOpen.type = bClose.type = "button";
   const noteIn = el("input"); noteIn.maxLength = 150; noteIn.placeholder = "ข้อความแจ้งลูกค้า (ไม่บังคับ) เช่น หยุดวันนี้ เปิดพรุ่งนี้"; noteIn.value = d.note || "";
-  bOpen.onclick = () => { if (d.shopClosed) save({ type: "shop", closed: false, note: noteIn.value }, "เปิดร้านแล้ว"); };
-  bClose.onclick = () => { if (!d.shopClosed && confirm("ปิดร้านวันนี้? ลูกค้าจะเห็นประกาศและสั่งสำหรับวันนี้ไม่ได้")) save({ type: "shop", closed: true, note: noteIn.value }, "ปิดร้านวันนี้แล้ว"); };
+  bOpen.onclick = () => { if (d.shopClosed) save({ type: "shop", closed: false, note: noteIn.value }, "เปิดร้านวันนี้แล้ว"); };
+  bClose.onclick = () => { if (!d.shopClosed && confirm("ปิดร้านวันนี้? ลูกค้าจะสั่งนัดวันนี้ไม่ได้")) save({ type: "shop", closed: true, note: noteIn.value }, "ปิดร้านวันนี้แล้ว"); };
   seg.append(bOpen, bClose);
   const nb = el("div", "shp-note"), nbtn = el("button", "btn sm", "บันทึก"); nbtn.type = "button";
   nbtn.onclick = () => save({ type: "note", note: noteIn.value }, "บันทึกข้อความแล้ว");
   nb.append(noteIn, nbtn);
-  c1.append(seg, nb, el("div", "ord-sub", "ลูกค้าจะเห็น popup แจ้งสถานะร้านทุกครั้งที่เปิดหน้าสั่งอาหาร • ปิดร้านมีผลเฉพาะวันนี้ ข้ามวันจะเปิดให้เอง"));
-  wrap.appendChild(c1);
+  c1.append(seg, nb, el("div", "ord-sub", "ลูกค้าจะเห็น popup แจ้งสถานะร้านทุกครั้งที่เปิดหน้าสั่งอาหาร"));
+
+  // วันหยุดล่วงหน้า / เป็นช่วงวัน
+  const th = v => new Date(v + "T12:00:00").toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "2-digit" });
+  const rtxt = r => r[0] === r[1] ? th(r[0]) : th(r[0]) + " – " + th(r[1]);
+  const c2 = el("div", "shp-card");
+  c2.append(el("div", "shp-st", "📅 ตั้งวันหยุดล่วงหน้า"));
+  const today = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+  const mk = (lbl, val) => { const w = el("div", "shp-dt"), i = el("input"); i.type = "date"; i.min = today; i.value = val; w.append(el("label", "", lbl), i); return [w, i]; };
+  const [wf, from] = mk("ตั้งแต่วันที่", today), [wt, to] = mk("ถึงวันที่", today);
+  from.onchange = () => { if (to.value < from.value) to.value = from.value; };
+  const dr = el("div", "shp-dates"); dr.append(wf, wt);
+  const addB = el("button", "btn mango", "เพิ่มวันหยุด"); addB.type = "button";
+  addB.onclick = () => {
+    if (!from.value) return toast("เลือกวันที่ก่อน", true);
+    const t = to.value || from.value;
+    save({ type: "closeRange", from: from.value, to: t }, "ตั้งวันหยุดแล้ว");
+  };
+  c2.append(dr, addB);
+  const list = d.closures || [];
+  if (list.length) {
+    c2.append(el("div", "ord-sub", "วันหยุดที่ตั้งไว้"));
+    list.forEach(r => {
+      const row = el("div", "shp-row"), x = el("button", "shp-sw off", "ยกเลิก"); x.type = "button";
+      x.onclick = () => { if (confirm("ยกเลิกวันหยุด " + rtxt(r) + " ?")) save({ type: "openRange", from: r[0], to: r[1] }, "ยกเลิกวันหยุดแล้ว"); };
+      row.append(el("span", "", "🔴 " + rtxt(r) + (r[0] <= today && today <= r[1] ? " (วันนี้ปิด)" : "")), x); c2.append(row);
+    });
+  }
+  wrap.appendChild(c1); wrap.appendChild(c2);
 
   // เมนูตามหมวด
   if (!d.categories.length) wrap.appendChild(el("div", "empty-state", "ยังไม่มีเมนูที่เปิดขายออนไลน์"));
