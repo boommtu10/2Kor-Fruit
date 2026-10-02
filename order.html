@@ -94,7 +94,9 @@ function render(){
   const wrap=$('menu');wrap.innerHTML='';
   if(!cfg.menus.length){wrap.innerHTML='<p style="padding:24px 16px">ยังไม่มีเมนูให้สั่งออนไลน์</p>';return;}
   const groups={};cfg.menus.forEach(m=>(groups[m.category||'เมนูอื่นๆ']=groups[m.category||'เมนูอื่นๆ']||[]).push(m));
-  Object.keys(groups).forEach(cat=>{
+  const order=Array.isArray(cfg.categories)?cfg.categories:[];
+  const catList=[...order.filter(c=>groups[c]),...Object.keys(groups).filter(c=>!order.includes(c))];
+  catList.forEach(cat=>{
     const h=document.createElement('h2');h.textContent=cat;wrap.appendChild(h);
     const g=document.createElement('div');g.className='grid';wrap.appendChild(g);
     groups[cat].forEach(m=>{
