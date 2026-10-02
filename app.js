@@ -1756,7 +1756,7 @@ const ORD = { list: [], seen: new Set(), soundOn: false, ctx: null, wake: null, 
   css.textContent = `.ord-bell{position:relative}.ord-badge{position:absolute;top:-4px;right:-4px;background:#d63a2f;color:#fff;border-radius:999px;font-size:11px;min-width:18px;height:18px;line-height:18px;text-align:center;padding:0 4px;display:none}
   #ord-sound{position:fixed;left:12px;right:12px;bottom:calc(12px + env(safe-area-inset-bottom,0px));z-index:70;background:#d63a2f;color:#fff;border:none;border-radius:12px;padding:14px;font:600 15px inherit;font-family:inherit;display:none}
   .ord-card{border:1px solid #e7e2d6;border-radius:14px;padding:12px;margin-bottom:10px;background:#fff}.ord-card.new{border-color:#d63a2f;background:#fff6f4}
-  .ord-top{display:flex;justify-content:space-between;font-weight:600}.ord-sub{font-size:13px;color:#6b665a;margin-top:4px}.ord-acts{display:flex;gap:8px;margin-top:10px}.ord-acts button{flex:1}
+  .ord-top{display:flex;justify-content:space-between;font-weight:600}.ord-sub{font-size:13px;color:#6b665a;margin-top:4px}.ord-acts{display:flex;gap:8px;margin-top:12px;align-items:stretch}
   #ord-page,#fruit-page,#shop-page{position:fixed;inset:0;z-index:60;background:#faf6ef;display:none;flex-direction:column}#ord-page.show,#fruit-page.show,#shop-page.show{display:flex}
   .ord-head{display:flex;align-items:center;gap:12px;background:#2F5233;color:#fff;padding:calc(12px + env(safe-area-inset-top,0px)) 16px 12px;flex-shrink:0}.ord-title{font-weight:700;font-size:18px;flex:1}
   #ord-list,#fruit-list,#shop-list{flex:1;overflow:auto;padding:14px 16px 96px;width:100%;max-width:1100px;margin:0 auto}.ord-h{margin:16px 0 8px;font-size:15px;color:#8a5a2b}.ord-h.late{color:#d63a2f}
@@ -1770,7 +1770,10 @@ const ORD = { list: [], seen: new Set(), soundOn: false, ctx: null, wake: null, 
   .shp-sw{border:none;border-radius:999px;padding:8px 14px;font:600 13px inherit;font-family:inherit;background:#dcefd8;color:#2F5233;white-space:nowrap}
   .shp-sw.off{background:#fbe4e1;color:#c1443c}.shp-sw:disabled{opacity:.5}.shp-row.dim span{color:#999}
   .ord-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px}.ord-grid .ord-card{margin:0}
-  .ord-acts button.ord-print{flex:0 0 auto;padding-left:14px;padding-right:14px;white-space:nowrap}
+.ord-acts button{width:auto;min-width:0;flex:1 1 0;padding:12px 6px;font-size:14px;line-height:1.2;white-space:nowrap;border-radius:12px}
+  .ord-acts button:not(.outline){flex:1.7 1 0}
+  .ord-acts button.ord-cancel{color:#c1443c;border-color:rgba(193,68,60,.35);background:#fff}
+  .ord-acts button.ord-print{flex:0 0 auto;padding:12px 14px;background:#fff;color:#2F5233;border:1.5px solid rgba(47,82,51,.35)}
   #app .topbar .ord-tb-actions{display:flex;align-items:center;gap:8px;margin-left:auto;flex-shrink:0}
   #app .topbar .ord-tb-title{min-width:0;flex:1 1 0;line-height:1.3}
   #app .topbar .ord-tb-title,#app .topbar .ord-tb-title>*{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -1893,7 +1896,7 @@ function orderCard(o) {
   o.items.forEach(it => c.append(el("div", "ord-sub", `${it.name} x ${it.qty}` + (it.fruits && it.fruits.length ? " : " + it.fruits.join(", ") : ""))));
   if (o.note) c.append(el("div", "ord-sub", "หมายเหตุ: " + o.note));
   c.append(el("div", "ord-sub", `สถานะ: ${o.status}${o.staff ? " (โดย " + o.staff + ")" : ""}`));
-  const next = { "รอรับ": [["รับออเดอร์", "รับแล้ว", "btn mango"], ["ยกเลิก", "ยกเลิก", "btn outline"]], "รับแล้ว": [["พร้อมรับ/กำลังส่ง", "พร้อมรับ/กำลังส่ง", "btn"], ["เสร็จสิ้น", "เสร็จสิ้น", "btn outline"]], "พร้อมรับ/กำลังส่ง": [["เสร็จสิ้น", "เสร็จสิ้น", "btn"]] }[o.status] || [];
+  const next = { "รอรับ": [["รับออเดอร์", "รับแล้ว", "btn mango"], ["ยกเลิก", "ยกเลิก", "btn outline ord-cancel"]], "รับแล้ว": [["พร้อมรับ/กำลังส่ง", "พร้อมรับ/กำลังส่ง", "btn"], ["เสร็จสิ้น", "เสร็จสิ้น", "btn outline"]], "พร้อมรับ/กำลังส่ง": [["เสร็จสิ้น", "เสร็จสิ้น", "btn"]] }[o.status] || [];
   const acts = el("div", "ord-acts");
   next.forEach(([label, status, cls]) => {
     const b = el("button", cls, label); b.type = "button";
