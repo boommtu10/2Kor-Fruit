@@ -1757,9 +1757,18 @@ const ORD = { list: [], seen: new Set(), soundOn: false, ctx: null, wake: null, 
   #ord-sound{position:fixed;left:12px;right:12px;bottom:calc(12px + env(safe-area-inset-bottom,0px));z-index:70;background:#d63a2f;color:#fff;border:none;border-radius:12px;padding:14px;font:600 15px inherit;font-family:inherit;display:none}
   .ord-card{border:1px solid #e7e2d6;border-radius:14px;padding:12px;margin-bottom:10px;background:#fff}.ord-card.new{border-color:#d63a2f;background:#fff6f4}
   .ord-top{display:flex;justify-content:space-between;font-weight:600}.ord-sub{font-size:13px;color:#6b665a;margin-top:4px}.ord-acts{display:flex;gap:8px;margin-top:10px}.ord-acts button{flex:1}
-  #ord-page,#fruit-page{position:fixed;inset:0;z-index:60;background:#faf6ef;display:none;flex-direction:column}#ord-page.show,#fruit-page.show{display:flex}
+  #ord-page,#fruit-page,#shop-page{position:fixed;inset:0;z-index:60;background:#faf6ef;display:none;flex-direction:column}#ord-page.show,#fruit-page.show,#shop-page.show{display:flex}
   .ord-head{display:flex;align-items:center;gap:12px;background:#2F5233;color:#fff;padding:calc(12px + env(safe-area-inset-top,0px)) 16px 12px;flex-shrink:0}.ord-title{font-weight:700;font-size:18px;flex:1}
-  #ord-list,#fruit-list{flex:1;overflow:auto;padding:14px 16px 96px;width:100%;max-width:1100px;margin:0 auto}.ord-h{margin:16px 0 8px;font-size:15px;color:#8a5a2b}.ord-h.late{color:#d63a2f}
+  #ord-list,#fruit-list,#shop-list{flex:1;overflow:auto;padding:14px 16px 96px;width:100%;max-width:1100px;margin:0 auto}.ord-h{margin:16px 0 8px;font-size:15px;color:#8a5a2b}.ord-h.late{color:#d63a2f}
+  .shp-card{background:#fff;border:1px solid #e7e2d6;border-radius:14px;padding:14px;margin-bottom:12px}
+  .shp-st{font-weight:700;font-size:17px;margin-bottom:10px}.shp-st.on{color:#2F5233}.shp-st.off{color:#d63a2f}
+  .shp-seg{display:flex;gap:8px;margin-bottom:10px}.shp-seg button{flex:1;padding:12px;border-radius:10px;border:1.5px solid #d8d2c2;background:#fff;font:600 15px inherit;font-family:inherit}
+  .shp-seg button.on{background:#2F5233;border-color:#2F5233;color:#fff}.shp-seg button.off{background:#d63a2f;border-color:#d63a2f;color:#fff}
+  .shp-note{display:flex;gap:8px}.shp-note input{flex:1;min-width:0;padding:10px;border:1.4px solid #d8d2c2;border-radius:9px;font:inherit}
+  .shp-cat{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px}.shp-cat b{font-size:15px;color:#8a5a2b}
+  .shp-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 0;border-top:1px solid #eee}.shp-row span{flex:1;min-width:0}
+  .shp-sw{border:none;border-radius:999px;padding:8px 14px;font:600 13px inherit;font-family:inherit;background:#dcefd8;color:#2F5233;white-space:nowrap}
+  .shp-sw.off{background:#fbe4e1;color:#c1443c}.shp-sw:disabled{opacity:.5}.shp-row.dim span{color:#999}
   .ord-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px}.ord-grid .ord-card{margin:0}
   .ord-acts button.ord-print{flex:0 0 auto;padding-left:14px;padding-right:14px;white-space:nowrap}
   #app .topbar .ord-tb-actions{display:flex;align-items:center;gap:8px;margin-left:auto;flex-shrink:0}
@@ -1788,6 +1797,9 @@ const ORD = { list: [], seen: new Set(), soundOn: false, ctx: null, wake: null, 
     const wrap = document.createElement("div"); wrap.className = "ord-tb-actions";
     tb.insertBefore(wrap, btns[0]); btns.forEach(b => wrap.appendChild(b));
   })();
+  const ms = (id) => { const b = document.createElement("button"); b.className = "icon-btn"; b.id = id; b.title = "เปิด/ปิดร้านและเมนู"; b.textContent = "🏪"; b.onclick = openShop; return b; };
+  document.querySelector("#sales-screen .sm-actions").prepend(ms("btn-shop-sales"));
+  document.querySelector("#app .topbar .ord-tb-actions").insertBefore(ms("btn-shop-admin"), document.getElementById("btn-fr-admin"));
   const page = document.createElement("div");
   page.id = "ord-page";
   page.innerHTML = '<div class="ord-head"><button class="icon-btn" id="ord-back" title="กลับ">‹</button><div class="ord-title">ออเดอร์ออนไลน์</div></div><div id="ord-list"></div>';
@@ -1899,6 +1911,68 @@ function orderCard(o) {
   acts.appendChild(pb);
   c.append(acts);
   return c;
+}
+
+// ---- เปิด/ปิดร้านวันนี้ + เปิด/ปิดเมนู (ทั้งหมวด หรือเฉพาะเมนูที่หมด) ----
+// ปิดร้าน: มีผลเฉพาะวันนี้ ข้ามวันเปิดเอง | ปิดเมนู/หมวด: ค้างจนกว่าจะกดเปิด
+async function openShop() {
+  let page = document.getElementById("shop-page");
+  if (!page) {
+    page = document.createElement("div"); page.id = "shop-page";
+    page.innerHTML = '<div class="ord-head"><button class="icon-btn" id="shop-back">‹</button><div class="ord-title">เปิด/ปิดร้านและเมนู</div></div><div id="shop-list"></div>';
+    document.body.appendChild(page);
+    document.getElementById("shop-back").onclick = () => page.classList.remove("show");
+  }
+  page.classList.add("show");
+  const wrap = document.getElementById("shop-list");
+  wrap.innerHTML = '<div class="empty-state">กำลังโหลด…</div>';
+  const d = await apiGet("getAvailability");
+  if (!d || !Array.isArray(d.categories)) { wrap.innerHTML = '<div class="empty-state">โหลดไม่สำเร็จ</div>'; return; }
+  renderShop(d);
+}
+
+function renderShop(d) {
+  const wrap = document.getElementById("shop-list"); wrap.innerHTML = "";
+  const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; };
+  const save = async (payload, okMsg) => {
+    const res = await apiPost("setAvailability", payload);
+    if (res && res.ok) toast(okMsg || "บันทึกแล้ว"); else toast((res && res.error) || "บันทึกไม่สำเร็จ", true);
+    const nd = await apiGet("getAvailability"); if (nd && nd.categories) renderShop(nd);
+  };
+
+  // การ์ดสถานะร้านวันนี้
+  const c1 = el("div", "shp-card");
+  c1.append(el("div", "shp-st " + (d.shopClosed ? "off" : "on"), d.shopClosed ? "🔴 วันนี้ร้านปิด" : "🟢 วันนี้ร้านเปิด"));
+  const seg = el("div", "shp-seg");
+  const bOpen = el("button", d.shopClosed ? "" : "on", "เปิดร้าน"), bClose = el("button", d.shopClosed ? "off" : "", "ปิดร้านวันนี้");
+  bOpen.type = bClose.type = "button";
+  const noteIn = el("input"); noteIn.maxLength = 150; noteIn.placeholder = "ข้อความแจ้งลูกค้า (ไม่บังคับ) เช่น หยุดวันนี้ เปิดพรุ่งนี้"; noteIn.value = d.note || "";
+  bOpen.onclick = () => { if (d.shopClosed) save({ type: "shop", closed: false, note: noteIn.value }, "เปิดร้านแล้ว"); };
+  bClose.onclick = () => { if (!d.shopClosed && confirm("ปิดร้านวันนี้? ลูกค้าจะเห็นประกาศและสั่งสำหรับวันนี้ไม่ได้")) save({ type: "shop", closed: true, note: noteIn.value }, "ปิดร้านวันนี้แล้ว"); };
+  seg.append(bOpen, bClose);
+  const nb = el("div", "shp-note"), nbtn = el("button", "btn sm", "บันทึก"); nbtn.type = "button";
+  nbtn.onclick = () => save({ type: "note", note: noteIn.value }, "บันทึกข้อความแล้ว");
+  nb.append(noteIn, nbtn);
+  c1.append(seg, nb, el("div", "ord-sub", "ลูกค้าจะเห็น popup แจ้งสถานะร้านทุกครั้งที่เปิดหน้าสั่งอาหาร • ปิดร้านมีผลเฉพาะวันนี้ ข้ามวันจะเปิดให้เอง"));
+  wrap.appendChild(c1);
+
+  // เมนูตามหมวด
+  if (!d.categories.length) wrap.appendChild(el("div", "empty-state", "ยังไม่มีเมนูที่เปิดขายออนไลน์"));
+  d.categories.forEach(cat => {
+    const card = el("div", "shp-card");
+    const head = el("div", "shp-cat"); head.append(el("b", "", cat.name));
+    const cb = el("button", "shp-sw" + (cat.closed ? " off" : ""), cat.closed ? "ปิดทั้งหมวด · แตะเพื่อเปิด" : "ปิดทั้งหมวด"); cb.type = "button";
+    cb.onclick = () => { cb.disabled = true; save({ type: "category", name: cat.name, closed: !cat.closed }, cat.closed ? "เปิดหมวดแล้ว" : "ปิดหมวดแล้ว"); };
+    head.append(cb); card.append(head);
+    cat.menus.forEach(m => {
+      const row = el("div", "shp-row" + (cat.closed || m.closed ? " dim" : ""));
+      const sw = el("button", "shp-sw" + (cat.closed || m.closed ? " off" : ""), cat.closed ? "ปิดตามหมวด" : m.closed ? "หมด" : "มีของ"); sw.type = "button";
+      sw.disabled = cat.closed;
+      sw.onclick = () => { sw.disabled = true; save({ type: "menu", id: m.id, closed: !m.closed }, m.closed ? "เปิดขายแล้ว" : "ตั้งเป็นหมดแล้ว"); };
+      row.append(el("span", "", m.name), sw); card.append(row);
+    });
+    wrap.appendChild(card);
+  });
 }
 
 // ---- พิมพ์ใบออเดอร์ (เครื่องพิมพ์สลิปกระดาษหน้ากว้าง 57 mm) ----

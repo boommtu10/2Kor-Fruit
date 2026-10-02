@@ -39,11 +39,19 @@ input,select,textarea{width:100%;font:16px 'IBM Plex Sans Thai',sans-serif;paddi
 #mineList{flex:1;overflow:auto;padding:8px 16px 24px;max-width:700px;width:100%;margin:0 auto}
 .oc{background:#fff;border:1px solid #e7e2d6;border-radius:14px;padding:12px;margin-bottom:10px}.oc .st{display:inline-block;border-radius:999px;padding:3px 10px;font-size:13px;font-weight:600;background:#fdebc8;color:#8a5a2b}
 .oc .st.ok{background:#dcefd8;color:#2F5233}.oc .st.no{background:#eee;color:#777}.oc .sub{font-size:13px;color:#6b665a;margin-top:4px}
+.card.out{opacity:.55}.card.out img,.card.out .ph{filter:grayscale(1)}
+.soldtag{margin-top:8px;text-align:center;border-radius:10px;background:#eee;color:#777;font-weight:600;font-size:13px;padding:9px}
+h2 .ct{font-size:12px;color:#b23a3a;font-family:'IBM Plex Sans Thai',sans-serif;margin-left:6px}
+#welcome{position:fixed;inset:0;background:rgba(0,0,0,.5);display:none;align-items:center;justify-content:center;z-index:30;padding:24px}
+#welcome .in{background:#fff;border-radius:20px;max-width:360px;width:100%;padding:24px 20px;text-align:center}
+#welcome .ic{font-size:44px;line-height:1}#welcome h3{font-family:Kanit,sans-serif;font-size:20px;margin:10px 0 6px}
+#welcome p{margin:6px 0;font-size:14px;color:#4a463c}#welcome .nt{background:#faf6ef;border-radius:10px;padding:10px;margin:12px 0;font-size:14px;font-weight:600}
 </style>
 </head>
 <body>
 <header style="display:flex;justify-content:space-between;align-items:center;gap:8px"><div><div id="shop">2 กอ ผลไม้ปอกพร้อมทาน</div><small id="hours">สั่งออนไลน์ รับเองหรือนัดส่ง</small></div><button id="mineBtn" onclick="openMine()" style="background:rgba(255,255,255,.18);color:#fff;border:none;border-radius:10px;padding:9px 12px;font:600 13px inherit;font-family:inherit">ออเดอร์ของฉัน</button></header>
 <div id="banner"></div>
+<div id="welcome"><div class="in"><div class="ic" id="wIc"></div><h3 id="wTitle"></h3><p id="wBody"></p><div class="nt" id="wNote" style="display:none"></div><button class="btn" onclick="welcome.style.display='none'">รับทราบ</button></div></div>
 <div id="menu"><p style="padding:24px 16px">กำลังโหลดเมนู…</p></div>
 <div id="done"><b>ส่งออเดอร์แล้ว</b><p id="doneTxt"></p><button class="btn" style="margin-bottom:8px" onclick="openMine()">ดูสถานะออเดอร์</button><button class="btn" onclick="location.reload()">สั่งเพิ่ม</button></div>
 <div id="bar"><button class="btn" id="cartBtn"></button></div>
@@ -74,7 +82,7 @@ input,select,textarea{width:100%;font:16px 'IBM Plex Sans Thai',sans-serif;paddi
 <script src="./config.js"></script>
 <script>
 const $=id=>document.getElementById(id),sheet=$('sheet');
-let cfg=null,cart={},picks=[];
+let cfg=null,cart={},picks=[];const welcome=$('welcome');
 const baht=n=>'฿'+Number(n).toLocaleString('th-TH',{maximumFractionDigits:2});
 const pad=n=>String(n).padStart(2,'0');
 const fmt=d=>d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());
@@ -84,20 +92,29 @@ const count=()=>Object.values(cart).reduce((a,b)=>a+b,0)+picks.reduce((s,p)=>s+p
 async function load(){
   try{
     const r=await (await fetch(GAS_URL+'?action=getPublicMenus')).json();
-    if(!r.menus)throw 0; cfg=r; render();
+    if(!r.menus)throw 0; cfg=r; render(); showWelcome();
   }catch(e){ $('menu').innerHTML='<p style="padding:24px 16px">โหลดเมนูไม่สำเร็จ กรุณารีเฟรชหน้านี้</p>'; }
+}
+function showWelcome(){
+  const sh=cfg.shop||{},closed=!!sh.closedToday,paused=!cfg.open;
+  $('wIc').textContent=closed||paused?'🔴':'🟢';
+  $('wTitle').textContent=paused?'ร้านปิดรับออเดอร์ออนไลน์ชั่วคราว':closed?'วันนี้ร้านปิด':'วันนี้ร้านเปิด';
+  $('wBody').textContent=paused?'กรุณากลับมาสั่งใหม่ภายหลัง':closed?'ขออภัย วันนี้ร้านปิดทำการ สั่งล่วงหน้าสำหรับวันถัดไปได้':'รับออเดอร์นัดเวลา '+cfg.openTime+' - '+cfg.closeTime+' น.';
+  const n=$('wNote');n.textContent=sh.note||'';n.style.display=sh.note?'block':'none';
+  welcome.style.display='flex';
 }
 function render(){
   $('shop').textContent=cfg.shopName;
   $('hours').textContent='รับออเดอร์นัดเวลา '+cfg.openTime+' - '+cfg.closeTime+' น.';
   if(!cfg.open){$('banner').style.display='block';$('banner').textContent='ขณะนี้ร้านปิดรับออเดอร์ออนไลน์ชั่วคราว';}
+  else if(cfg.shop&&cfg.shop.closedToday){$('banner').style.display='block';$('banner').textContent='วันนี้ร้านปิด — สั่งล่วงหน้าสำหรับวันถัดไปได้';}
   const wrap=$('menu');wrap.innerHTML='';
   if(!cfg.menus.length){wrap.innerHTML='<p style="padding:24px 16px">ยังไม่มีเมนูให้สั่งออนไลน์</p>';return;}
   const groups={};cfg.menus.forEach(m=>(groups[m.category||'เมนูอื่นๆ']=groups[m.category||'เมนูอื่นๆ']||[]).push(m));
   const order=Array.isArray(cfg.categories)?cfg.categories:[];
   const catList=[...order.filter(c=>groups[c]),...Object.keys(groups).filter(c=>!order.includes(c))];
   catList.forEach(cat=>{
-    const h=document.createElement('h2');h.textContent=cat;wrap.appendChild(h);
+    const h=document.createElement('h2');h.textContent=cat;if(groups[cat].every(m=>m.soldOut)){h.append(Object.assign(document.createElement('span'),{className:'ct',textContent:'ปิดชั่วคราว'}));}wrap.appendChild(h);
     const g=document.createElement('div');g.className='grid';wrap.appendChild(g);
     groups[cat].forEach(m=>{
       const c=document.createElement('div');c.className='card';
@@ -108,6 +125,7 @@ function render(){
       const minus=Object.assign(document.createElement('button'),{textContent:'−'});
       const q=Object.assign(document.createElement('span'),{textContent:'0'});
       const plus=Object.assign(document.createElement('button'),{textContent:'+',className:'plus'});
+      if(m.soldOut){c.classList.add('out');c.append(img,nm,pr,Object.assign(document.createElement('div'),{className:'soldtag',textContent:'หมดชั่วคราว'}));g.appendChild(c);return;}
       const set=v=>{v=Math.max(0,Math.min(m.maxQty||20,v));cart[m.id]=v;q.textContent=v;bar();};
       minus.onclick=()=>set((cart[m.id]||0)-1);plus.onclick=()=>set((cart[m.id]||0)+1);
       if(m.pickMax>0){
@@ -133,6 +151,7 @@ function slots(dayStr){
 function fillDays(){
   const s=$('day');s.innerHTML='';
   for(let i=0;i<=cfg.maxDaysAhead;i++){
+    if(i===0&&cfg.shop&&cfg.shop.closedToday)continue;
     const d=new Date(Date.now()+i*86400000),v=fmt(d);
     if(!slots(v).length)continue;
     const o=document.createElement('option');o.value=v;
