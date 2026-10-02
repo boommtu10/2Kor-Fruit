@@ -1754,27 +1754,34 @@ const ORD = { list: [], seen: new Set(), soundOn: false, ctx: null, wake: null, 
 (function buildOrdersUI() {
   const css = document.createElement("style");
   css.textContent = `.ord-bell{position:relative}.ord-badge{position:absolute;top:-4px;right:-4px;background:#d63a2f;color:#fff;border-radius:999px;font-size:11px;min-width:18px;height:18px;line-height:18px;text-align:center;padding:0 4px;display:none}
-  #ord-sound{position:fixed;left:12px;right:12px;bottom:calc(12px + env(safe-area-inset-bottom,0px));z-index:50;background:#d63a2f;color:#fff;border:none;border-radius:12px;padding:14px;font:600 15px inherit;font-family:inherit;display:none}
+  #ord-sound{position:fixed;left:12px;right:12px;bottom:calc(12px + env(safe-area-inset-bottom,0px));z-index:70;background:#d63a2f;color:#fff;border:none;border-radius:12px;padding:14px;font:600 15px inherit;font-family:inherit;display:none}
   .ord-card{border:1px solid #e7e2d6;border-radius:14px;padding:12px;margin-bottom:10px;background:#fff}.ord-card.new{border-color:#d63a2f;background:#fff6f4}
-  .ord-top{display:flex;justify-content:space-between;font-weight:600}.ord-sub{font-size:13px;color:#6b665a;margin-top:4px}.ord-acts{display:flex;gap:8px;margin-top:10px}.ord-acts button{flex:1}`;
+  .ord-top{display:flex;justify-content:space-between;font-weight:600}.ord-sub{font-size:13px;color:#6b665a;margin-top:4px}.ord-acts{display:flex;gap:8px;margin-top:10px}.ord-acts button{flex:1}
+  #ord-page,#fruit-page{position:fixed;inset:0;z-index:60;background:#faf6ef;display:none;flex-direction:column}#ord-page.show,#fruit-page.show{display:flex}
+  .ord-head{display:flex;align-items:center;gap:12px;background:#2F5233;color:#fff;padding:calc(12px + env(safe-area-inset-top,0px)) 16px 12px;flex-shrink:0}.ord-title{font-weight:700;font-size:18px;flex:1}
+  #ord-list,#fruit-list{flex:1;overflow:auto;padding:14px 16px 96px;width:100%;max-width:1100px;margin:0 auto}.ord-h{margin:16px 0 8px;font-size:15px;color:#8a5a2b}.ord-h.late{color:#d63a2f}
+  .ord-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px}.ord-grid .ord-card{margin:0}`;
   document.head.appendChild(css);
 
   const mk = (id) => { const b = document.createElement("button"); b.className = "icon-btn ord-bell"; b.id = id; b.title = "ออเดอร์ออนไลน์"; b.innerHTML = '🧾<span class="ord-badge"></span>'; b.onclick = openOrders; return b; };
   document.querySelector("#sales-screen .sm-actions").prepend(mk("btn-ord-sales"));
   document.querySelector("#app .topbar").insertBefore(mk("btn-ord-admin"), document.getElementById("btn-low-stock"));
 
-  const modal = document.createElement("div");
-  modal.className = "modal-backdrop hidden"; modal.id = "modal-orders";
-  modal.innerHTML = '<div class="modal-sheet"><button class="modal-close" data-close-modal="modal-orders">✕</button><h3>ออเดอร์ออนไลน์</h3><div id="ord-list"></div></div>';
-  document.body.appendChild(modal);
-  modal.querySelector(".modal-close").onclick = () => closeModal("modal-orders");
+  const mf = (id) => { const b = document.createElement("button"); b.className = "icon-btn"; b.id = id; b.title = "ผลไม้วันนี้"; b.textContent = "🍉"; b.onclick = openFruits; return b; };
+  document.querySelector("#sales-screen .sm-actions").prepend(mf("btn-fr-sales"));
+  document.querySelector("#app .topbar").insertBefore(mf("btn-fr-admin"), document.getElementById("btn-ord-admin"));
+  const page = document.createElement("div");
+  page.id = "ord-page";
+  page.innerHTML = '<div class="ord-head"><button class="icon-btn" id="ord-back" title="กลับ">‹</button><div class="ord-title">ออเดอร์ออนไลน์</div></div><div id="ord-list"></div>';
+  document.body.appendChild(page);
+  document.getElementById("ord-back").onclick = () => page.classList.remove("show");
 
   const sb = document.createElement("button");
   sb.id = "ord-sound"; sb.textContent = "แตะที่นี่เพื่อเปิดเสียงแจ้งเตือนออเดอร์";
   sb.onclick = enableOrderAlerts; document.body.appendChild(sb);
 })();
 
-function openOrders() { renderOrders(); openModal("modal-orders"); }
+function openOrders() { renderOrders(); document.getElementById("ord-page").classList.add("show"); }
 
 // เบราว์เซอร์บังคับให้ผู้ใช้ "แตะ" ก่อนถึงจะเล่นเสียง/ขอแจ้งเตือน/กันจอดับได้ จึงต้องมีปุ่มนี้
 async function enableOrderAlerts() {
@@ -1817,45 +1824,91 @@ async function pollOrders() {
   document.title = fresh.length ? `(${fresh.length}) ออเดอร์ใหม่ — ` + ORD.baseTitle : ORD.baseTitle;
   document.getElementById("ord-sound").style.display = (!ORD.soundOn && fresh.length) || (!ORD.soundOn) ? "block" : "none";
 
-  if (fresh.length) beep(); // ดังซ้ำทุกรอบ จนกว่าจะมีคนกดรับ
+  if (fresh.some(o => String(o.when).slice(0, 10) >= todayStr())) beep(); // ดังซ้ำทุกรอบจนกว่าจะมีคนกดรับ (ออเดอร์ค้างจากวันก่อนไม่ดัง แต่ยังขึ้นสีแดงในหน้าออเดอร์)
   if (brandNew.length && "Notification" in window && Notification.permission === "granted" && document.hidden) {
     const o = brandNew[0], msg = `${o.name} · ${o.items.length} รายการ · ฿${o.total}`;
     navigator.serviceWorker.ready.then(r => r.showNotification("ออเดอร์ใหม่", { body: msg, tag: "new-order", renotify: true, requireInteraction: true })).catch(() => {});
   }
-  if (!document.getElementById("modal-orders").classList.contains("hidden")) renderOrders();
+  if (document.getElementById("ord-page").classList.contains("show")) renderOrders();
 }
 setInterval(pollOrders, 15000);
 setTimeout(pollOrders, 2500);
 
+function todayStr() { const d = new Date(); return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); }
+
+// ออเดอร์จะหายจากหน้านี้ก็ต่อเมื่อกด "เสร็จสิ้น" หรือ "ยกเลิก" เท่านั้น ถ้าลืมกด
+// จะค้างอยู่ และถูกแยกไปอยู่หัวข้อสีแดง "ค้างจากวันก่อน" ให้เห็นชัด
 function renderOrders() {
   const wrap = document.getElementById("ord-list");
   wrap.innerHTML = "";
   if (!ORD.list.length) { wrap.innerHTML = '<div class="empty-state">ไม่มีออเดอร์ค้าง</div>'; return; }
-  const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; };
-  ORD.list.forEach(o => {
-    const c = el("div", "ord-card" + (o.status === "รอรับ" ? " new" : ""));
-    const top = el("div", "ord-top"); top.append(el("span", "", `${o.id} · ${o.name}`), el("span", "", money(o.total)));
-    const phone = el("div", "ord-sub"); const a = el("a", "", o.phone); a.href = "tel:" + o.phone; phone.append("โทร ", a, ` · ${o.method} · นัด ${o.when}`);
-    c.append(top, phone);
-    if (o.address) c.append(el("div", "ord-sub", "ที่อยู่: " + o.address));
-    o.items.forEach(it => c.append(el("div", "ord-sub", `${it.name} x ${it.qty}`)));
-    if (o.note) c.append(el("div", "ord-sub", "หมายเหตุ: " + o.note));
-    c.append(el("div", "ord-sub", `สถานะ: ${o.status}${o.staff ? " (โดย " + o.staff + ")" : ""}`));
-    const next = { "รอรับ": [["รับออเดอร์", "รับแล้ว", "btn mango"], ["ยกเลิก", "ยกเลิก", "btn outline"]], "รับแล้ว": [["พร้อมรับ/กำลังส่ง", "พร้อมรับ/กำลังส่ง", "btn"], ["เสร็จสิ้น", "เสร็จสิ้น", "btn outline"]], "พร้อมรับ/กำลังส่ง": [["เสร็จสิ้น", "เสร็จสิ้น", "btn"]] }[o.status] || [];
-    const acts = el("div", "ord-acts");
-    next.forEach(([label, status, cls]) => {
-      const b = el("button", cls, label); b.type = "button";
-      b.onclick = async () => {
-        if (status === "ยกเลิก" && !confirm("ยกเลิกออเดอร์นี้?")) return;
-        b.disabled = true;
-        const res = await apiPost("updateOrder", { orderId: o.id, status });
-        if (res.ok) { toast(res.failed && res.failed.length ? "รับแล้ว แต่บันทึกขายไม่ครบ: " + res.failed.join(", ") + " — กรุณาบันทึกเองในโหมดขาย" : "อัปเดตแล้ว", !!(res.failed && res.failed.length)); }
-        else toast(res.error || "อัปเดตไม่สำเร็จ", true);
-        await pollOrders(); renderOrders();
-      };
-      acts.appendChild(b);
-    });
-    if (next.length) c.append(acts);
-    wrap.appendChild(c);
+  const today = todayStr();
+  [["ค้างจากวันก่อน — ยังไม่ได้กด เสร็จสิ้น", o => o.when.slice(0, 10) < today, "late"],
+   ["วันนี้", o => o.when.slice(0, 10) === today, ""],
+   ["วันถัดไป", o => o.when.slice(0, 10) > today, ""]].forEach(([title, test, cls]) => {
+    const items = ORD.list.filter(test).sort((x, y) => x.when.localeCompare(y.when));
+    if (!items.length) return;
+    const h = document.createElement("div"); h.className = "ord-h " + cls; h.textContent = `${title} (${items.length})`; wrap.appendChild(h);
+    const g = document.createElement("div"); g.className = "ord-grid"; items.forEach(o => g.appendChild(orderCard(o))); wrap.appendChild(g);
   });
+}
+
+function orderCard(o) {
+  const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; };
+  const c = el("div", "ord-card" + (o.status === "รอรับ" ? " new" : ""));
+  const top = el("div", "ord-top"); top.append(el("span", "", `${o.id} · ${o.name}`), el("span", "", money(o.total)));
+  const phone = el("div", "ord-sub"); const a = el("a", "", o.phone); a.href = "tel:" + o.phone; phone.append("โทร ", a, ` · ${o.method} · นัด ${o.when}`);
+  c.append(top, phone);
+  if (o.address) c.append(el("div", "ord-sub", "ที่อยู่: " + o.address));
+  o.items.forEach(it => c.append(el("div", "ord-sub", `${it.name} x ${it.qty}` + (it.fruits && it.fruits.length ? " : " + it.fruits.join(", ") : ""))));
+  if (o.note) c.append(el("div", "ord-sub", "หมายเหตุ: " + o.note));
+  c.append(el("div", "ord-sub", `สถานะ: ${o.status}${o.staff ? " (โดย " + o.staff + ")" : ""}`));
+  const next = { "รอรับ": [["รับออเดอร์", "รับแล้ว", "btn mango"], ["ยกเลิก", "ยกเลิก", "btn outline"]], "รับแล้ว": [["พร้อมรับ/กำลังส่ง", "พร้อมรับ/กำลังส่ง", "btn"], ["เสร็จสิ้น", "เสร็จสิ้น", "btn outline"]], "พร้อมรับ/กำลังส่ง": [["เสร็จสิ้น", "เสร็จสิ้น", "btn"]] }[o.status] || [];
+  const acts = el("div", "ord-acts");
+  next.forEach(([label, status, cls]) => {
+    const b = el("button", cls, label); b.type = "button";
+    b.onclick = async () => {
+      if (status === "ยกเลิก" && !confirm("ยกเลิกออเดอร์นี้?")) return;
+      b.disabled = true;
+      const res = await apiPost("updateOrder", { orderId: o.id, status });
+      if (res.ok) toast(res.failed && res.failed.length ? "รับแล้ว แต่บันทึกขายไม่ครบ: " + res.failed.join(", ") + " — กรุณาบันทึกเองในโหมดขาย" : "อัปเดตแล้ว", !!(res.failed && res.failed.length));
+      else toast(res.error || "อัปเดตไม่สำเร็จ", true);
+      await pollOrders(); renderOrders();
+    };
+    acts.appendChild(b);
+  });
+  if (next.length) c.append(acts);
+  return c;
+}
+
+// ---- ผลไม้วันนี้: เปิด/ปิดว่าวันนี้มีผลไม้ชนิดไหน (ลูกค้าเลือกได้เฉพาะที่เปิดอยู่) ----
+async function openFruits() {
+  let page = document.getElementById("fruit-page");
+  if (!page) {
+    page = document.createElement("div"); page.id = "fruit-page";
+    page.innerHTML = '<div class="ord-head"><button class="icon-btn" id="fruit-back">‹</button><div class="ord-title">ผลไม้วันนี้</div></div><div id="fruit-list"></div>';
+    document.body.appendChild(page);
+    document.getElementById("fruit-back").onclick = () => page.classList.remove("show");
+  }
+  page.classList.add("show");
+  const wrap = document.getElementById("fruit-list");
+  wrap.innerHTML = '<div class="empty-state">กำลังโหลด…</div>';
+  const list = await apiGet("getFruits");
+  if (!Array.isArray(list)) { wrap.innerHTML = '<div class="empty-state">โหลดไม่สำเร็จ</div>'; return; }
+  const hint = document.createElement("div"); hint.className = "hint"; hint.textContent = "แตะเพื่อเปิด/ปิด — ผลไม้ที่ปิดอยู่ ลูกค้าจะไม่เห็นในหน้าสั่งของ";
+  const add = document.createElement("div"); add.style.cssText = "display:flex;gap:8px;margin:12px 0";
+  add.innerHTML = '<input id="fruit-new" maxlength="30" placeholder="เพิ่มผลไม้ชนิดใหม่" style="flex:1;padding:10px;border:1.4px solid #d8d2c2;border-radius:9px;font:inherit"><button class="btn mango" id="fruit-add" style="width:auto;padding:10px 16px">เพิ่ม</button>';
+  const grid = document.createElement("div"); grid.className = "ord-grid";
+  wrap.innerHTML = ""; wrap.append(hint, add, grid);
+  list.forEach(f => {
+    const b = document.createElement("button"); b.type = "button";
+    const paint = () => { b.className = "btn" + (f.on ? "" : " outline"); b.textContent = `${f.name} — ${f.on ? "มีวันนี้" : "หมด/ไม่มี"}`; };
+    paint();
+    b.onclick = async () => { f.on = !f.on; paint(); const r = await apiPost("setFruit", { id: f.id, on: f.on }); if (!r.ok) { f.on = !f.on; paint(); toast(r.error || "บันทึกไม่สำเร็จ", true); } };
+    grid.appendChild(b);
+  });
+  document.getElementById("fruit-add").onclick = async () => {
+    const r = await apiPost("addFruit", { name: document.getElementById("fruit-new").value });
+    if (r.ok) openFruits(); else toast(r.error || "เพิ่มไม่สำเร็จ", true);
+  };
 }
