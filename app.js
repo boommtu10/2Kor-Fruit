@@ -2031,8 +2031,9 @@ function renderShop(d) {
 
 // ---- พิมพ์ใบออเดอร์ (เครื่องพิมพ์สลิปกระดาษหน้ากว้าง 57 mm) ----
 // ปรับได้ที่นี่: PAPER = ความกว้างกระดาษ, CONTENT = ความกว้างเนื้อหาที่พิมพ์จริง
-// (เครื่อง 57/58mm ส่วนใหญ่พิมพ์ได้จริงราว 48-52mm ถ้าตัวหนังสือขอบขาด ให้ลดค่า CONTENT)
-const ORD_PRINT = { PAPER: "57mm", CONTENT: "46mm", EXTRA_MM: 6, FIXED_HEIGHT_MM: 0, SHOP: "2 กอ ผลไม้ปอกพร้อมทาน", LOGO: "./icons/logo-256.png" };
+// (เครื่อง 57/58mm พิมพ์ได้จริงราว 46-48mm ถ้าขอบซ้าย/ขวายังขาด ให้ลดค่า CONTENT)
+// FEED = จำนวนแถวเส้นประท้ายใบ ดันกระดาษให้พ้นแท่งฉีก ไม่งั้นบรรทัดท้าย ๆ จะค้างอยู่ในเครื่อง (ไดรเวอร์มักตัดพื้นที่ว่างท้ายหน้าทิ้ง จึงต้องมีเส้นพิมพ์จริง) ถ้ายังขาดให้เพิ่มเป็น 3
+const ORD_PRINT = { PAPER: "57mm", CONTENT: "46mm", FEED: 2, EXTRA_MM: 6, FIXED_HEIGHT_MM: 0, SHOP: "2 กอ ผลไม้ปอกพร้อมทาน", LOGO: "./icons/logo-256.png" };
 
 function printOrder(o) {
   const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -2047,7 +2048,7 @@ function printOrder(o) {
 @page{margin:0}
 *{box-sizing:border-box}
 html,body{margin:0;padding:0;background:#fff}
-body{width:${ORD_PRINT.CONTENT};margin:0 auto;padding:2mm 0 6mm;color:#000;font-family:"Noto Sans Thai","Sarabun","IBM Plex Sans Thai",sans-serif;font-size:12px;line-height:1.35}
+body{width:100%;max-width:${ORD_PRINT.CONTENT};margin:0 auto;padding:2mm 0 1mm;color:#000;font-family:"Noto Sans Thai","Sarabun","IBM Plex Sans Thai",sans-serif;font-size:12px;line-height:1.35}
 .c{text-align:center}.logo{display:block;margin:0 auto 3px;width:22mm;height:auto;filter:grayscale(1) contrast(1.6)}
 .shop{font-size:15px;font-weight:700;text-align:center}.sub{text-align:center;font-size:11px}
 .hr{border:0;border-top:1px dashed #000;margin:5px 0}.hr2{border:0;border-top:2px solid #000;margin:5px 0}
@@ -2056,6 +2057,7 @@ body{width:${ORD_PRINT.CONTENT};margin:0 auto;padding:2mm 0 6mm;color:#000;font-
 .it{margin-bottom:4px}.r{display:flex;justify-content:space-between;gap:6px}.r span:last-child{white-space:nowrap}
 .fr{padding-left:8px;font-size:11px;word-break:break-word}
 .tot{font-size:16px;font-weight:700}
+.fd{margin-top:4mm;text-align:center;font-size:10px;line-height:1}
 .note{border:1px solid #000;padding:2px 4px;margin-top:3px;word-break:break-word}
 </style></head><body>
 <img class="logo" id="logo" src="${esc(logo)}" alt="">
@@ -2077,6 +2079,7 @@ ${o.method === "นัดส่ง" ? '<div class="sub">* ยังไม่ร�
 <hr class="hr">
 <div class="sub">${o.staff ? "ผู้รับออเดอร์: " + esc(o.staff) + "<br>" : ""}พิมพ์ ${esc(new Date().toLocaleString("th-TH", { dateStyle: "short", timeStyle: "short" }))}</div>
 <div class="c" style="margin-top:4px">ขอบคุณที่อุดหนุนค่ะ</div>
+${Array(ORD_PRINT.FEED).fill('<div class="fd">- - - - - - - - - - - - - - -</div>').join("")}
 </body></html>`;
 
   const fr = document.createElement("iframe");
