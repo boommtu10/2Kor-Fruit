@@ -2035,16 +2035,15 @@ function renderShop(d) {
 // FEED = จำนวนแถวเส้นประท้ายใบ ดันกระดาษให้พ้นแท่งฉีก ไม่งั้นบรรทัดท้าย ๆ จะค้างอยู่ในเครื่อง (ไดรเวอร์มักตัดพื้นที่ว่างท้ายหน้าทิ้ง จึงต้องมีเส้นพิมพ์จริง) ถ้ายังขาดให้เพิ่มเป็น 3
 const ORD_PRINT = { PAPER: "57mm", CONTENT: "46mm", FEED: 2, EXTRA_MM: 6, FIXED_HEIGHT_MM: 0, SHOP: "2 กอ ผลไม้ปอกพร้อมทาน", LOGO: "./icons/logo-256.png" };
 
-function printOrder(o) {
-  const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-  const logo = new URL(ORD_PRINT.LOGO, location.href).href;
-  const qtyAll = o.items.reduce((s, it) => s + it.qty, 0);
-  const rows = o.items.map(it =>
-    `<div class="it"><div class="r"><span>${esc(it.name)}</span></div>` +
-    `<div class="r"><span>&nbsp;&nbsp;${money(it.price)} x ${it.qty}</span><span>${money(it.price * it.qty)}</span></div>` +
-    (it.fruits && it.fruits.length ? `<div class="fr">ผลไม้: ${esc(it.fruits.join(", "))}</div>` : "") + `</div>`).join("");
-  const line = (k, v) => v ? `<div class="kv"><b>${k}</b> ${esc(v)}</div>` : "";
-  const html = `<!DOCTYPE html><html lang="th"><head><meta charset="UTF-8"><title>${esc(o.id)}</title><style>
+// ---- ตัวช่วยพิมพ์สลิปกลาง (ใช้ร่วมกันทุกใบ: ออเดอร์ออนไลน์ / สรุปยอด / บิลขาย) ----
+// ทุกใบใช้ ORD_PRINT ชุดเดียวกัน ขนาดกระดาษจึงเท่ากันเสมอ แก้ที่ ORD_PRINT ที่เดียวมีผลทุกใบ
+function slipEsc(s) {
+  return String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+// ห่อเนื้อหา (bodyHtml) ด้วย CSS สลิปมาตรฐาน คืนเป็นหน้า HTML เต็ม
+function slipDocument(title, bodyHtml) {
+  return `<!DOCTYPE html><html lang="th"><head><meta charset="UTF-8"><title>${slipEsc(title)}</title><style>
 @page{margin:0}
 *{box-sizing:border-box}
 html,body{margin:0;padding:0;background:#fff}
@@ -2060,28 +2059,15 @@ body{width:100%;max-width:${ORD_PRINT.CONTENT};margin:0 auto;padding:2mm 0 1mm;c
 .fd{margin-top:4mm;text-align:center;font-size:10px;line-height:1}
 .note{border:1px solid #000;padding:2px 4px;margin-top:3px;word-break:break-word}
 </style></head><body>
-<img class="logo" id="logo" src="${esc(logo)}" alt="">
-<div class="shop">${esc(ORD_PRINT.SHOP)}</div>
-<div class="sub">ใบออเดอร์ออนไลน์</div>
-<hr class="hr2">
-<div class="id">${esc(o.id)}</div>
-<div class="c">${esc(o.method)}</div>
-<hr class="hr">
-${line("ลูกค้า:", o.name)}${line("โทร:", o.phone)}${line("นัดรับ/ส่ง:", o.when)}${line("สั่งเมื่อ:", o.createdAt)}${line("ที่อยู่:", o.address)}
-${o.note ? `<div class="note"><b>หมายเหตุ:</b> ${esc(o.note)}</div>` : ""}
-<hr class="hr">
-<div><b>รายการ</b></div>
-${rows}
-<hr class="hr">
-<div class="r"><span>รวมทั้งหมด ${qtyAll} ชิ้น</span></div>
-<div class="r tot"><span>ยอดรวม</span><span>${money(o.total)}</span></div>
-${o.method === "นัดส่ง" ? '<div class="sub">* ยังไม่รวมค่าส่ง</div>' : ""}
-<hr class="hr">
-<div class="sub">${o.staff ? "ผู้รับออเดอร์: " + esc(o.staff) + "<br>" : ""}พิมพ์ ${esc(new Date().toLocaleString("th-TH", { dateStyle: "short", timeStyle: "short" }))}</div>
-<div class="c" style="margin-top:4px">ขอบคุณที่อุดหนุนค่ะ</div>
+<img class="logo" id="logo" src="${slipEsc(new URL(ORD_PRINT.LOGO, location.href).href)}" alt="">
+<div class="shop">${slipEsc(ORD_PRINT.SHOP)}</div>
+${bodyHtml}
 ${Array(ORD_PRINT.FEED).fill('<div class="fd">- - - - - - - - - - - - - - -</div>').join("")}
 </body></html>`;
+}
 
+// ส่งหน้า HTML ที่ได้จาก slipDocument เข้า iframe ซ่อน แล้วสั่งพิมพ์
+function runSlipPrint(html) {
   const fr = document.createElement("iframe");
   fr.style.cssText = "position:fixed;right:0;bottom:0;width:57mm;height:10px;border:0;visibility:hidden";
   document.body.appendChild(fr);
@@ -2104,6 +2090,117 @@ ${Array(ORD_PRINT.FEED).fill('<div class="fd">- - - - - - - - - - - - - - -</div
   const img = doc.getElementById("logo");
   if (img && !img.complete) { img.onload = img.onerror = go; setTimeout(go, 2000); } else setTimeout(go, 150);
 }
+
+// ---- ใบออเดอร์ออนไลน์ (พฤติกรรมเดิมทุกอย่าง แค่ย้ายส่วนซ้ำไปใช้ตัวช่วยกลางด้านบน) ----
+function printOrder(o) {
+  const esc = slipEsc;
+  const qtyAll = o.items.reduce((s, it) => s + it.qty, 0);
+  const rows = o.items.map(it =>
+    `<div class="it"><div class="r"><span>${esc(it.name)}</span></div>` +
+    `<div class="r"><span>&nbsp;&nbsp;${money(it.price)} x ${it.qty}</span><span>${money(it.price * it.qty)}</span></div>` +
+    (it.fruits && it.fruits.length ? `<div class="fr">ผลไม้: ${esc(it.fruits.join(", "))}</div>` : "") + `</div>`).join("");
+  const line = (k, v) => v ? `<div class="kv"><b>${k}</b> ${esc(v)}</div>` : "";
+  const body = `
+<div class="sub">ใบออเดอร์ออนไลน์</div>
+<hr class="hr2">
+<div class="id">${esc(o.id)}</div>
+<div class="c">${esc(o.method)}</div>
+<hr class="hr">
+${line("ลูกค้า:", o.name)}${line("โทร:", o.phone)}${line("นัดรับ/ส่ง:", o.when)}${line("สั่งเมื่อ:", o.createdAt)}${line("ที่อยู่:", o.address)}
+${o.note ? `<div class="note"><b>หมายเหตุ:</b> ${esc(o.note)}</div>` : ""}
+<hr class="hr">
+<div><b>รายการ</b></div>
+${rows}
+<hr class="hr">
+<div class="r"><span>รวมทั้งหมด ${qtyAll} ชิ้น</span></div>
+<div class="r tot"><span>ยอดรวม</span><span>${money(o.total)}</span></div>
+${o.method === "นัดส่ง" ? '<div class="sub">* ยังไม่รวมค่าส่ง</div>' : ""}
+<hr class="hr">
+<div class="sub">${o.staff ? "ผู้รับออเดอร์: " + esc(o.staff) + "<br>" : ""}พิมพ์ ${esc(new Date().toLocaleString("th-TH", { dateStyle: "short", timeStyle: "short" }))}</div>
+<div class="c" style="margin-top:4px">ขอบคุณที่อุดหนุนค่ะ</div>`;
+  runSlipPrint(slipDocument(o.id, body));
+}
+
+// ---- พิมพ์ "บิลขาย" จากหน้าสรุปรายการขาย (โหมดขายสินค้า) ----
+// ใช้รายการที่ค้างอยู่ใน state.pendingSaleItems (รายการเดียวกับที่เห็นใน popup)
+// กดพิมพ์ได้ทั้งก่อนและหลังตรวจรายการ ไม่ได้บันทึกขายให้ — การบันทึกยังทำที่ปุ่ม "บันทึกการขาย" เหมือนเดิม
+function printSaleBill() {
+  const items = state.pendingSaleItems;
+  if (!items || !items.length) return toast("ยังไม่มีรายการให้พิมพ์", true);
+  const esc = slipEsc;
+  const ch = state.salesChannel || "";
+  const isLM = String(ch).trim() === "Line Man";
+  let qtyAll = 0, gross = 0, net = 0;
+  const rows = items.map(p => {
+    const q = Number(p.qty) || 0, pr = Number(p.price) || 0;
+    qtyAll += q; gross += roundMoney(q * pr); net += computeSaleTotal(q, pr, ch);
+    return `<div class="it"><div class="r"><span>${esc(p.menu.displayName)}</span></div>` +
+      `<div class="r"><span>&nbsp;&nbsp;${money(pr)} x ${q}</span><span>${money(q * pr)}</span></div></div>`;
+  }).join("");
+  const now = new Date();
+  const body = `
+<div class="sub">ใบเสร็จรับเงิน</div>
+<hr class="hr2">
+${ch ? `<div class="c">ช่องทาง: ${esc(ch)}</div><hr class="hr">` : ""}
+<div><b>รายการ</b></div>
+${rows}
+<hr class="hr">
+<div class="r"><span>รวมทั้งหมด ${qtyAll} ชิ้น</span></div>
+${isLM ? `<div class="r"><span>ยอดก่อนหักค่าคอม</span><span>${money(gross)}</span></div><div class="r"><span>หักค่าคอม 32.10%</span><span>-${money(roundMoney(gross - net))}</span></div>` : ""}
+<div class="r tot"><span>${isLM ? "ยอดสุทธิ" : "ยอดรวม"}</span><span>${money(roundMoney(net))}</span></div>
+<hr class="hr">
+<div class="sub">${state.employee ? "ผู้ขาย: " + esc(state.employee.name) + "<br>" : ""}พิมพ์ ${esc(now.toLocaleString("th-TH", { dateStyle: "short", timeStyle: "short" }))}</div>
+<div class="c" style="margin-top:4px">ขอบคุณที่อุดหนุนค่ะ</div>`;
+  runSlipPrint(slipDocument("บิลขาย", body));
+}
+
+// ---- พิมพ์ "สรุปยอด" จากหน้าสรุปยอด (หลังบ้าน) ----
+// ใช้ข้อมูลชุดล่าสุดที่หน้าโหลดมาแล้ว (lastSummary) ไม่ยิง API ซ้ำ ตรงกับตัวเลขที่เห็นบนจอและไฟล์ Export
+function printSummarySlip() {
+  if (!lastSummary) return toast("ยังไม่มีข้อมูลให้พิมพ์", true);
+  const sum = lastSummary, esc = slipEsc;
+  // ค่าติดลบ (ต้นทุน/รายจ่าย) แสดงเป็น "-฿100" แทน "฿-100" ให้อ่านง่ายบนสลิป
+  const fmt = v => (Number(v) < 0 ? "-" + money(Math.abs(v)) : money(v));
+  const r = (k, v, cls) => `<div class="r${cls ? " " + cls : ""}"><span>${k}</span><span>${fmt(v)}</span></div>`;
+  const list = sum.stockOutList || [];
+  const body = `
+<div class="sub">สรุปยอด</div>
+<hr class="hr2">
+<div class="id" style="font-size:13px">${esc(sum.period)}</div>
+<hr class="hr">
+${r("ยอดขาย", sum.totalRevenue)}
+${r("ต้นทุนผลไม้ที่ตัดใช้จริง", -sum.totalRawMaterialCut)}
+${r("ต้นทุนบรรจุภัณฑ์ที่ใช้", -sum.totalPackagingCost)}
+${r("มูลค่าของเสีย", -sum.totalWaste)}
+${r("ค่าใช้จ่ายอื่น", -sum.totalOtherCosts)}
+<hr class="hr">
+${r("กำไรโดยประมาณ", sum.profit, "tot")}
+<hr class="hr">
+<div class="sub" style="text-align:left">รายการขาย ${list.length} รายการ</div>
+<div class="sub">${state.employee ? "พิมพ์โดย: " + esc(state.employee.name) + "<br>" : ""}พิมพ์ ${esc(new Date().toLocaleString("th-TH", { dateStyle: "short", timeStyle: "short" }))}</div>`;
+  runSlipPrint(slipDocument("สรุปยอด", body));
+}
+
+// ---- ติดตั้งปุ่มพิมพ์ 2 จุด (สร้างด้วย JS ไม่ต้องแก้ index.html) ----
+// 1) หน้าสรุปยอด: วางไว้ซ้ายปุ่ม Export  2) popup สรุปรายการขาย: วางไว้ระหว่างปุ่มย้อนกลับกับปุ่มบันทึก
+(function installPrintButtons() {
+  const exp = document.getElementById("summary-export-btn");
+  if (exp && !document.getElementById("summary-print-btn")) {
+    const b = document.createElement("button");
+    b.type = "button"; b.id = "summary-print-btn"; b.className = "btn outline"; b.textContent = "พิมพ์สลิป";
+    b.style.marginRight = "8px";
+    b.addEventListener("click", printSummarySlip);
+    exp.parentNode.insertBefore(b, exp);
+  }
+  const ok = document.getElementById("btn-confirm-sale-summary");
+  if (ok && !document.getElementById("btn-print-sale-bill")) {
+    const b = document.createElement("button");
+    b.type = "button"; b.id = "btn-print-sale-bill"; b.className = "btn outline"; b.textContent = "พิมพ์";
+    b.style.flex = "1";
+    b.addEventListener("click", printSaleBill);
+    ok.parentNode.insertBefore(b, ok);
+  }
+})();
 
 // ---- ผลไม้วันนี้: เปิด/ปิดว่าวันนี้มีผลไม้ชนิดไหน (ลูกค้าเลือกได้เฉพาะที่เปิดอยู่) ----
 async function openFruits() {
