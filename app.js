@@ -348,7 +348,7 @@ function fillProductSelects() {
   const stockedList = activeAll.filter(p => Number(p["สต๊อกปัจจุบัน"]) > 0);
   const rawOnly = stockedList.filter(p => p["หมวดหมู่"] === "วัตถุดิบ");
 
-  [["waste-product", stockedList], ["cut-product", rawOnly]].forEach(([id, list]) => {
+  [["waste-product", stockedList]].forEach(([id, list]) => {
     const sel = document.getElementById(id);
     if (!sel) return;
     const cur = sel.value;
@@ -369,7 +369,7 @@ function fillProductSelects() {
     if (cur) sel.value = cur;
   });
   updateWasteHint();
-  updateCutHint();
+  renderCutList(rawOnly);
 }
 
 // หน้า "สต๊อกคงเหลือ" — ถ้าสินค้าตัวเดียวกันมีของเหลืออยู่หลายราคาทุนพร้อมกัน
@@ -574,29 +574,98 @@ document.getElementById("form-add-product").addEventListener("submit", async (e)
 // ============================================================
 // STOCK CUT — ตัดสต๊อกผลไม้/วัตถุดิบด้วยมือ (นำไปปอก/แปรรูป/ใช้งาน)
 // ============================================================
-function updateCutHint() {
-  const sel = document.getElementById("cut-product");
-  const opt = sel.selectedOptions[0];
-  const hint = document.getElementById("cut-stock-hint");
-  hint.textContent = (opt && opt.dataset.stock !== undefined) ? `คงเหลือในสต๊อก: ${opt.dataset.stock}` : "";
+// แสดงวัตถุดิบที่มีของเหลือเป็นเช็คลิสต์ เรียงตามอักษรไทย (ไม่อิงวันที่รับเข้า)
+// ชื่อซ้ำ (ซื้อคนละรอบคนละราคา) ให้เรียงตามราคาทุนต่อ
+// รักษาตัวเลขที่พิมพ์ค้างไว้ไม่ให้หายตอนข้อมูลรีเฟรช
+function renderCutList(rawOnly) {
+  const wrap = document.getElementById("cut-list");
+  if (!wrap) return;
+  const typed = {};
+  wrap.querySelectorAll("input.cut-input").forEach(inp => { if (inp.value !== "") typed[inp.dataset.id] = inp.value; });
+
+  const list = (rawOnly || []).slice().sort((x, y) =>
+    String(x["ชื่อสินค้า"]).localeCompare(String(y["ชื่อสินค้า"]), "th") ||
+    (Number(x["ราคาทุนล่าสุด"]) || 0) - (Number(y["ราคาทุนล่าสุด"]) || 0));
+
+  if (!list.length) {
+    wrap.innerHTML = '<div class="empty-state">ยังไม่มีวัตถุดิบที่มีของเหลือให้ตัด</div>';
+    updateCutSummary();
+    return;
+  }
+  wrap.innerHTML = "";
+  list.forEach(p => {
+    const id = p["รหัสสินค้า"], unit = p["หน่วยนับ"] || "";
+    const row = document.createElement("div");
+    row.className = "cut-row";
+    const nameBox = document.createElement("div");
+    nameBox.className = "cut-name";
+    nameBox.textContent = p["ชื่อสินค้า"];
+    const small = document.createElement("small");
+    small.textContent = `${money(p["ราคาทุนล่าสุด"])}/${unit}`;
+    nameBox.appendChild(small);
+    const remain = document.createElement("div");
+    remain.className = "cut-remain";
+    remain.textContent = `${p["สต๊อกปัจจุบัน"]} ${unit}`;
+    const inp = document.createElement("input");
+    inp.type = "number"; inp.className = "cut-input"; inp.min = "0"; inp.step = "any";
+    inp.inputMode = "decimal"; inp.placeholder = "0";
+    inp.dataset.id = id; inp.dataset.stock = p["สต๊อกปัจจุบัน"]; inp.dataset.name = p["ชื่อสินค้า"];
+    if (typed[id] !== undefined) inp.value = typed[id];
+    inp.addEventListener("input", updateCutSummary);
+    row.append(nameBox, remain, inp);
+    wrap.appendChild(row);
+  });
+  updateCutSummary();
 }
-document.getElementById("cut-product").addEventListener("change", updateCutHint);
+
+// ไฮไลต์แถวที่กรอก (ส้ม) / กรอกเกินคงเหลือ (แดง) และสรุปจำนวนรายการ
+function updateCutSummary() {
+  const inputs = document.querySelectorAll("#cut-list input.cut-input");
+  let n = 0, over = 0;
+  inputs.forEach(inp => {
+    const v = Number(inp.value), has = inp.value !== "" && v > 0;
+    const isOver = has && v > Number(inp.dataset.stock);
+    inp.closest(".cut-row").classList.toggle("filled", has && !isOver);
+    inp.closest(".cut-row").classList.toggle("over", isOver);
+    if (has) n++;
+    if (isOver) over++;
+  });
+  const el = document.getElementById("cut-summary");
+  if (!el) return;
+  el.textContent = over ? `⚠️ มี ${over} รายการที่กรอกเกินจำนวนคงเหลือ`
+    : n ? `จะตัดสต๊อก ${n} รายการ` : "";
+}
 
 document.getElementById("form-stockcut").addEventListener("submit", async (e) => {
   e.preventDefault();
-  const productId = document.getElementById("cut-product").value;
-  if (!productId) return toast("ยังไม่มีวัตถุดิบให้เลือก กรุณาเพิ่มสินค้าประเภทวัตถุดิบก่อน", true);
-  const res = await submitWithLock(e.target, "cutStock", {
-    productId,
-    qty: document.getElementById("cut-qty").value,
+  const items = [];
+  let bad = null;
+  document.querySelectorAll("#cut-list input.cut-input").forEach(inp => {
+    if (inp.value === "") return;
+    const qty = Number(inp.value);
+    if (!(qty > 0)) return;
+    if (qty > Number(inp.dataset.stock)) bad = bad || inp.dataset.name;
+    items.push({ productId: inp.dataset.id, qty });
+  });
+  if (bad) return toast(`"${bad}" กรอกเกินจำนวนคงเหลือ กรุณาตรวจสอบ`, true);
+  if (!items.length) return toast("ยังไม่ได้กรอกจำนวนที่จะตัดสักรายการ", true);
+
+  const res = await submitWithLock(e.target, "cutStockBatch", {
+    items,
     note: document.getElementById("cut-note").value,
     employee: state.employee.name,
   });
   if (res.ok) {
-    toast("บันทึกตัดสต๊อกเรียบร้อย มูลค่าทุนที่ตัด " + money(res.costValue));
-    e.target.reset();
+    toast(`บันทึกตัดสต๊อก ${res.done} รายการเรียบร้อย มูลค่าทุนที่ตัด ${money(res.costValue)}`);
+    document.querySelectorAll("#cut-list input.cut-input").forEach(inp => { inp.value = ""; });
+    document.getElementById("cut-note").value = "";
+    updateCutSummary();
     refreshProducts(); refreshLowStock();
-  } else toast(res.error || "บันทึกไม่สำเร็จ", true);
+  } else {
+    // บางรายการอาจบันทึกไปแล้ว — รีเฟรชให้ตัวเลขคงเหลือตรงกับความจริง
+    toast(res.error || "บันทึกไม่สำเร็จ", true);
+    refreshProducts(); refreshLowStock();
+  }
 });
 
 // ============================================================
