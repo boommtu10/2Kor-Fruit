@@ -393,7 +393,8 @@ async function renderProductsList() {
   // แทนของเดิมอยู่แล้ว ตัวเก่าที่หมดสต๊อกเลยไม่จำเป็นต้องค้างโชว์ในลิสต์นี้อีก
   // ประวัติการขาย/ตัดสต๊อก/กำไรที่ผ่านมายังคำนวณถูกต้องปกติ เพราะข้อมูลเก่า
   // ยังอยู่ครบในชีต "ตัดสต๊อก"/"ขายออก"/"ของเสีย" ไม่เกี่ยวกับชีต "สินค้า" นี้
-  const visibleList = list.filter(p => Number(p["สต๊อกปัจจุบัน"]) > 0);
+  // (ติ๊ก "แสดงสินค้าที่หมดสต๊อกด้วย" เหนือรายการ เพื่อเข้าไปแก้ไข/ลบสินค้าที่หมดแล้วได้)
+  const visibleList = showEmptyStock ? list : list.filter(p => Number(p["สต๊อกปัจจุบัน"]) > 0);
 
   if (!visibleList.length) {
     wrap.innerHTML = '<div class="empty-state">ตอนนี้สต๊อกทุกตัวเป็น 0 หมด — กด + เพื่อรับสินค้าล็อตใหม่เข้าได้เลย</div>';
@@ -425,6 +426,7 @@ async function renderProductsList() {
           <div class="stock-unit">/ ${unit}</div>
         </div>
       `;
+      row.querySelector(".main").appendChild(productActions(p));
       wrap.appendChild(row);
       return;
     }
@@ -439,6 +441,7 @@ async function renderProductsList() {
         <div class="sub">${p["หมวดหมู่"]} · มีของเหลือหลายราคาทุน</div>
       </div>
     `;
+    head.querySelector(".main").appendChild(productActions(p));
     wrap.appendChild(head);
 
     lots.forEach(l => {
@@ -729,7 +732,10 @@ function renderCodesList() {
         <div class="title">${c.name}</div>
         <div class="sub">${parts.length ? parts.join(", ") : "ยังไม่ได้ผูกบรรจุภัณฑ์"}</div>
       </div>
-      <button type="button" class="btn outline btn-edit-code" data-code-id="${c.id}" style="width:auto;padding:8px 14px">แก้ไข</button>
+      <div style="display:flex;gap:6px;flex-shrink:0">
+        <button type="button" class="btn outline btn-edit-code" data-code-id="${c.id}" style="width:auto;padding:8px 14px">แก้ไข</button>
+        <button type="button" class="btn outline btn-del-code" data-code-id="${c.id}" style="width:auto;padding:8px 14px;color:#b23a3a;border-color:#e3b4b4">ลบ</button>
+      </div>
     `;
     wrap.appendChild(row);
   });
@@ -1008,7 +1014,16 @@ function renderMenusAdminList() {
     return;
   }
   wrap.innerHTML = "";
-  state.menus.forEach(m => {
+  const catIdx = c => { const i = state.menuCategories.indexOf(c); return i === -1 ? 999 : i; };
+  const sorted = state.menus.slice().sort((a, b) => catIdx(a.category) - catIdx(b.category) || a.order - b.order);
+  let lastCat = null;
+  sorted.forEach(m => {
+    if (m.category !== lastCat) {
+      lastCat = m.category;
+      const h = document.createElement("div");
+      h.className = "sm-cat-heading"; h.textContent = m.category || "อื่นๆ";
+      wrap.appendChild(h);
+    }
     const code = state.codes.find(c => c.id === m.codeId);
     const priceText = formatMenuPrices(m);
     const row = document.createElement("div");
@@ -1023,6 +1038,11 @@ function renderMenusAdminList() {
       <div class="acts">
         <button type="button" class="btn-edit-menu" data-menu-id="${m.id}">แก้ไข</button>
         <button type="button" class="btn-toggle-menu" data-menu-id="${m.id}" data-next="${m.status === "hidden" ? "active" : "hidden"}">${m.status === "hidden" ? "เปิดแสดง" : "ซ่อน"}</button>
+        <button type="button" class="btn-del-menu" data-menu-id="${m.id}" style="color:#b23a3a;border-color:#e3b4b4">ลบ</button>
+        <div style="display:flex;gap:6px">
+          <button type="button" class="btn-move-menu" data-menu-id="${m.id}" data-dir="up" title="เลื่อนขึ้น" style="flex:1">▲</button>
+          <button type="button" class="btn-move-menu" data-menu-id="${m.id}" data-dir="down" title="เลื่อนลง" style="flex:1">▼</button>
+        </div>
       </div>`;
     wrap.appendChild(row);
   });
@@ -1493,6 +1513,7 @@ async function loadSummary() {
       "กำไร = ยอดขาย − ต้นทุนผลไม้ที่ตัดใช้จริง − ต้นทุนบรรจุภัณฑ์ที่ใช้จริง − ของเสีย − ค่าใช้จ่ายอื่น (ยอดซื้อของช่วงนี้เป็นข้อมูลอ้างอิงกระแสเงินสด ไม่ได้ถูกหักซ้ำในการคำนวณกำไร)";
 
     renderSummaryStockOutList(sum.stockOutList);
+    renderSummaryExtraLists(sum);
   } catch (err) { toast("โหลดสรุปยอดไม่สำเร็จ", true); }
 }
 
@@ -1541,19 +1562,16 @@ function renderSummaryStockOutList(list) {
   }
   wrap.innerHTML = "";
   list.forEach(r => {
-    const d = new Date(r.date);
-    const timeLabel = isNaN(d) ? "" : d.toLocaleString("th-TH", {
-      day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit"
+    const row = recordRow({
+      title: r.itemName || "(ไม่ระบุชื่อ)",
+      sub: `${fmtDT(r.date)} · จำนวน ${r.qty} × ${money(r.sellPrice)}${r.channel ? " · " + r.channel : ""}${r.employee ? " · " + r.employee : ""}${r.note ? " · " + r.note : ""}`,
+      amount: money(r.total), amountCls: "pos",
+      actions: [
+        actBtn("แก้ไข", () => editSaleRecord(r)),
+        actBtn("ลบ", () => deleteWithConfirm("deleteStockOut", { id: r.id, ts: r.ts },
+          `ลบรายการขาย "${r.itemName}" จำนวน ${r.qty} (${money(r.total)})?\nบรรจุภัณฑ์ที่หักไปจะถูกคืนเข้าสต๊อกให้`, "ลบรายการขายแล้ว", afterRecordChange), true),
+      ],
     });
-    const row = document.createElement("div");
-    row.className = "list-row";
-    row.innerHTML = `
-      <div class="main">
-        <div class="title">${r.itemName || "(ไม่ระบุชื่อ)"}</div>
-        <div class="sub">${timeLabel} · จำนวน ${r.qty} × ${money(r.sellPrice)}${r.channel ? " · " + r.channel : ""}${r.employee ? " · " + r.employee : ""}</div>
-      </div>
-      <div class="trail pos">${money(r.total)}</div>
-    `;
     wrap.appendChild(row);
   });
 }
@@ -1671,8 +1689,14 @@ async function loadEmployeesList() {
       row.innerHTML = `
         <div class="main">
           <div class="title">${emp.name}</div>
-          <div class="sub">${emp.id} · ${emp.role === "admin" ? "ผู้ดูแลระบบ" : "พนักงาน"} · ${emp.status}</div>
+          <div class="sub">${emp.id} · ${emp.role === "admin" ? "ผู้ดูแลระบบ" : "พนักงาน"} · ${emp.status === "active" ? "ใช้งาน" : "ระงับ"}</div>
         </div>`;
+      const acts = [actBtn("แก้ไข", () => editEmployee(emp))];
+      if (!state.employee || emp.id !== state.employee.id) {
+        acts.push(actBtn("ลบ", () => deleteWithConfirm("deleteEmployee", { empId: emp.id },
+          `ลบพนักงาน "${emp.name}" ออกจากระบบ?\n(ถ้าแค่ไม่ให้เข้าใช้ชั่วคราว ให้เลือก แก้ไข > สถานะ = ระงับ แทน)`, "ลบพนักงานแล้ว", loadEmployeesList), true));
+      }
+      row.querySelector(".main").appendChild(actionRow(acts));
       wrap.appendChild(row);
     });
   } catch (err) { wrap.innerHTML = '<div class="empty-state">โหลดข้อมูลไม่สำเร็จ</div>'; }
@@ -2202,6 +2226,333 @@ ${r("กำไรโดยประมาณ", sum.profit, "tot")}
   }
 })();
 
+// ============================================================
+// แก้ไข / ลบ รายการที่เคยบันทึกไว้ (หลังบ้าน)
+// ใช้หน้าต่างแก้ไขกลางอันเดียว (openEditModal) สร้างด้วย JS ไม่ต้องเพิ่ม HTML ใน index.html
+// ฝั่งเซิร์ฟเวอร์เป็นคนคืน/หักสต๊อกให้ตรงเอง (ดู Code.gs ส่วน "แก้ไข / ลบ รายการที่เคยบันทึกไว้")
+// ============================================================
+let showEmptyStock = false; // หน้าสต๊อก: แสดงสินค้าที่หมดแล้วด้วยหรือไม่ (ไว้เข้าไปแก้ไข/ลบ)
+const WASTE_REASONS = ["ผลไม้เสีย/บูด", "หมดอายุ", "ปอกแล้วขายไม่ทัน", "ตกหล่น/เสียหายระหว่างทำ", "อื่นๆ"];
+const COST_CATEGORIES = ["ค่าเช่าที่", "ค่าแรง/ค่าจ้าง", "ค่าน้ำแข็ง", "ค่าน้ำ/ค่าไฟ", "ค่าเดินทาง/ขนส่ง", "อื่นๆ"];
+const PRODUCT_CATEGORIES = ["วัตถุดิบ", "บรรจุภัณฑ์", "อื่นๆ"];
+
+function fmtDT(v) {
+  const d = new Date(v);
+  return isNaN(d) ? "" : d.toLocaleString("th-TH", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+}
+
+// ปุ่มเล็กสำหรับแถวรายการ (danger = สีแดง ใช้กับปุ่มลบ)
+function actBtn(label, onClick, danger) {
+  const b = document.createElement("button");
+  b.type = "button"; b.textContent = label;
+  b.style.cssText = "font-size:12.5px;padding:6px 12px;border-radius:8px;background:#fff;cursor:pointer;font-family:inherit;white-space:nowrap;border:1px solid " +
+    (danger ? "#e3b4b4;color:#b23a3a" : "#d8d2c2;color:inherit");
+  b.addEventListener("click", onClick);
+  return b;
+}
+function actionRow(btns) {
+  const d = document.createElement("div");
+  d.style.cssText = "display:flex;gap:6px;flex-wrap:wrap;margin-top:6px";
+  btns.forEach(b => d.appendChild(b));
+  return d;
+}
+// แถวรายการมาตรฐาน: ชื่อ + บรรทัดรอง + ยอดเงินด้านขวา + ปุ่มด้านล่าง
+function recordRow({ title, sub, amount, amountCls, actions }) {
+  const row = document.createElement("div");
+  row.className = "list-row";
+  row.innerHTML = `<div class="main"><div class="title">${slipEsc(title)}</div><div class="sub">${slipEsc(sub)}</div></div>` +
+    `<div class="trail ${amountCls || ""}">${slipEsc(amount)}</div>`;
+  if (actions && actions.length) row.querySelector(".main").appendChild(actionRow(actions));
+  return row;
+}
+// รายการตัวเลือกสำหรับ select: ถ้าค่าปัจจุบันไม่อยู่ในลิสต์ (ข้อมูลเก่า) เติมให้ด้วย จะได้ไม่หายตอนกดบันทึก
+function optList(values, current, blankLabel) {
+  const list = values.slice();
+  if (current !== undefined && current !== null && current !== "" && list.indexOf(current) === -1) list.push(current);
+  return list.map(v => ({ v, t: v === "" ? (blankLabel || "(ไม่ระบุ)") : v }));
+}
+
+// หน้าต่างแก้ไขกลาง
+// spec = { title, hint?, fields:[{key,label,type?,value,options?,required?,min?,step?,placeholder?,maxlength?,hint?}],
+//          onSave(values) -> Promise<{ok,error}>, onDone?(res), okMsg? }
+function openEditModal(spec) {
+  let back = document.getElementById("modal-generic-edit");
+  if (!back) {
+    back = document.createElement("div");
+    back.className = "modal-backdrop hidden"; back.id = "modal-generic-edit"; back.style.zIndex = "200";
+    back.innerHTML = '<div class="modal-sheet"><button type="button" class="modal-close" id="generic-edit-close">✕</button>' +
+      '<h3 id="generic-edit-title"></h3><p class="hint hidden" id="generic-edit-hint"></p>' +
+      '<form id="form-generic-edit"><div id="generic-edit-fields"></div><button class="btn" type="submit" style="margin-top:14px">บันทึก</button></form></div>';
+    document.body.appendChild(back);
+    document.getElementById("generic-edit-close").addEventListener("click", () => back.classList.add("hidden"));
+  }
+  document.getElementById("generic-edit-title").textContent = spec.title;
+  const hint = document.getElementById("generic-edit-hint");
+  hint.textContent = spec.hint || ""; hint.classList.toggle("hidden", !spec.hint);
+
+  const box = document.getElementById("generic-edit-fields");
+  box.innerHTML = "";
+  spec.fields.forEach(f => {
+    const wrap = document.createElement("div"); wrap.className = "field";
+    const lab = document.createElement("label"); lab.textContent = f.label; wrap.appendChild(lab);
+    let inp;
+    if (f.type === "select") {
+      inp = document.createElement("select");
+      f.options.forEach(o => { const op = document.createElement("option"); op.value = o.v; op.textContent = o.t; inp.appendChild(op); });
+      inp.value = f.value === undefined || f.value === null ? "" : f.value;
+    } else {
+      inp = document.createElement("input");
+      inp.type = f.type || "text";
+      if (f.type === "number") { inp.step = f.step || "any"; inp.min = f.min !== undefined ? f.min : "0"; }
+      if (f.placeholder) inp.placeholder = f.placeholder;
+      if (f.maxlength) inp.maxLength = f.maxlength;
+      inp.value = f.value === undefined || f.value === null ? "" : f.value;
+    }
+    if (f.required) inp.required = true;
+    inp.dataset.key = f.key;
+    wrap.appendChild(inp);
+    if (f.hint) { const h = document.createElement("div"); h.className = "hint"; h.textContent = f.hint; wrap.appendChild(h); }
+    box.appendChild(wrap);
+  });
+
+  const form = document.getElementById("form-generic-edit");
+  form.onsubmit = async (e) => {
+    e.preventDefault();
+    const vals = {};
+    box.querySelectorAll("[data-key]").forEach(el => { vals[el.dataset.key] = el.value; });
+    const btn = form.querySelector('button[type="submit"]');
+    const oldText = btn.textContent;
+    btn.disabled = true; btn.textContent = "กำลังบันทึก...";
+    try {
+      const res = await spec.onSave(vals);
+      if (res && res.ok) {
+        back.classList.add("hidden");
+        toast(spec.okMsg || "บันทึกแล้ว");
+        if (spec.onDone) await spec.onDone(res);
+      } else toast((res && res.error) || "บันทึกไม่สำเร็จ", true);
+    } finally { btn.disabled = false; btn.textContent = oldText; }
+  };
+  back.classList.remove("hidden");
+  const first = box.querySelector("input,select");
+  if (first) setTimeout(() => first.focus(), 60);
+}
+
+// ถามยืนยันแล้วสั่งลบ (okMsg ส่งเป็นฟังก์ชันรับผลลัพธ์ได้) เสร็จแล้วเรียก after(res)
+async function deleteWithConfirm(action, payload, msg, okMsg, after) {
+  if (!confirm(msg)) return;
+  const res = await apiPost(action, payload);
+  if (res && res.ok) {
+    toast(typeof okMsg === "function" ? okMsg(res) : okMsg);
+    if (after) await after(res);
+  } else toast((res && res.error) || "ทำรายการไม่สำเร็จ", true);
+}
+
+// หลังแก้/ลบรายการที่กระทบสต๊อกหรือยอด: โหลดสรุปยอด + สต๊อก + แจ้งเตือนใกล้หมดใหม่
+function afterRecordChange() {
+  loadSummary();
+  refreshProducts();
+  refreshLowStock();
+}
+
+// ---------- หน้าสรุปยอด: รายการตัดสต๊อก / ของเสีย / ค่าใช้จ่ายอื่น ----------
+function ensureSummarySections() {
+  if (document.getElementById("sum-stockcut-list")) return true;
+  const anchor = document.getElementById("sum-stockout-list");
+  if (!anchor) return false;
+  anchor.insertAdjacentHTML("afterend",
+    '<div class="section-label" style="margin-top:18px">รายการตัดสต๊อกผลไม้/วัตถุดิบ (ช่วงนี้)</div>' +
+    '<div class="hint" style="margin:-6px 0 8px">ดูว่าตัดอะไรไปบ้าง — แก้จำนวนหรือลบได้ ระบบคืน/หักสต๊อกและต้นทุนให้ตรง</div>' +
+    '<div class="card" id="sum-stockcut-list"><div class="empty-state">กำลังโหลด…</div></div>' +
+    '<div class="section-label" style="margin-top:18px">รายการของเสีย (ช่วงนี้)</div>' +
+    '<div class="card" id="sum-waste-list"><div class="empty-state">กำลังโหลด…</div></div>' +
+    '<div class="section-label" style="margin-top:18px">ค่าใช้จ่ายอื่น (ช่วงนี้)</div>' +
+    '<div class="card" id="sum-cost-list"><div class="empty-state">กำลังโหลด…</div></div>');
+  return true;
+}
+function fillRecordList(id, list, emptyMsg, build) {
+  const wrap = document.getElementById(id);
+  if (!wrap) return;
+  if (!list || !list.length) { wrap.innerHTML = `<div class="empty-state">${emptyMsg}</div>`; return; }
+  wrap.innerHTML = "";
+  list.forEach(x => wrap.appendChild(build(x)));
+}
+function renderSummaryExtraLists(sum) {
+  if (!ensureSummarySections()) return;
+
+  fillRecordList("sum-stockcut-list", sum.stockCutList, "ยังไม่มีการตัดสต๊อกในช่วงนี้", r => recordRow({
+    title: r.productName || "(ไม่ระบุชื่อ)",
+    sub: `${fmtDT(r.date)} · ตัด ${r.qty}${r.note ? " · " + r.note : ""}${r.employee ? " · " + r.employee : ""}`,
+    amount: money(r.cost), amountCls: "neg",
+    actions: [
+      actBtn("แก้ไข", () => openEditModal({
+        title: "แก้ไขรายการตัดสต๊อก", hint: `${r.productName} · ${r.id} — แก้จำนวนแล้วสต๊อกและต้นทุนที่ตัดจะปรับตามให้`,
+        fields: [
+          { key: "qty", label: "จำนวนที่ตัด", type: "number", value: r.qty, min: "0.01", required: true },
+          { key: "note", label: "หมายเหตุ", value: r.note || "" },
+        ],
+        onSave: v => apiPost("updateStockCut", { id: r.id, ts: r.ts, qty: v.qty, note: v.note }),
+        onDone: afterRecordChange, okMsg: "แก้ไขรายการตัดสต๊อกแล้ว",
+      })),
+      actBtn("ลบ", () => deleteWithConfirm("deleteStockCut", { id: r.id, ts: r.ts },
+        `ลบรายการตัดสต๊อก "${r.productName}" จำนวน ${r.qty}?\nสต๊อกจะถูกคืนกลับเข้าระบบ และต้นทุน ${money(r.cost)} จะถูกหักออกจากสรุปยอด`,
+        "ลบรายการตัดสต๊อกแล้ว คืนสต๊อกให้แล้ว", afterRecordChange), true),
+    ],
+  }));
+
+  fillRecordList("sum-waste-list", sum.wasteList, "ไม่มีของเสียในช่วงนี้", r => recordRow({
+    title: r.productName || "(ไม่ระบุชื่อ)",
+    sub: `${fmtDT(r.date)} · เสีย ${r.qty}${r.reason ? " · " + r.reason : ""}${r.employee ? " · " + r.employee : ""}`,
+    amount: money(r.cost), amountCls: "neg",
+    actions: [
+      actBtn("แก้ไข", () => openEditModal({
+        title: "แก้ไขรายการของเสีย", hint: `${r.productName} · ${r.id}`,
+        fields: [
+          { key: "qty", label: "จำนวนที่เสีย", type: "number", value: r.qty, min: "0.01", required: true },
+          { key: "note", label: "สาเหตุ", type: "select", value: r.reason || "", options: optList(WASTE_REASONS, r.reason) },
+        ],
+        onSave: v => apiPost("updateWaste", { id: r.id, ts: r.ts, qty: v.qty, note: v.note }),
+        onDone: afterRecordChange, okMsg: "แก้ไขรายการของเสียแล้ว",
+      })),
+      actBtn("ลบ", () => deleteWithConfirm("deleteWaste", { id: r.id, ts: r.ts },
+        `ลบรายการของเสีย "${r.productName}" จำนวน ${r.qty}?\nสต๊อกจะถูกคืนกลับเข้าระบบ`,
+        "ลบรายการของเสียแล้ว คืนสต๊อกให้แล้ว", afterRecordChange), true),
+    ],
+  }));
+
+  fillRecordList("sum-cost-list", sum.costList, "ไม่มีค่าใช้จ่ายอื่นในช่วงนี้", r => recordRow({
+    title: (r.category || "อื่นๆ") + (r.description ? " — " + r.description : ""),
+    sub: `${fmtDT(r.date)}${r.employee ? " · " + r.employee : ""}`,
+    amount: money(r.amount), amountCls: "neg",
+    actions: [
+      actBtn("แก้ไข", () => openEditModal({
+        title: "แก้ไขค่าใช้จ่าย", hint: r.id,
+        fields: [
+          { key: "category", label: "ประเภท", type: "select", value: r.category || "", options: optList(COST_CATEGORIES, r.category) },
+          { key: "description", label: "รายละเอียด", value: r.description || "" },
+          { key: "amount", label: "จำนวนเงิน (บาท)", type: "number", value: r.amount, min: "0", required: true },
+        ],
+        onSave: v => apiPost("updateOtherCost", { id: r.id, ts: r.ts, category: v.category, description: v.description, amount: v.amount }),
+        onDone: afterRecordChange, okMsg: "แก้ไขค่าใช้จ่ายแล้ว",
+      })),
+      actBtn("ลบ", () => deleteWithConfirm("deleteOtherCost", { id: r.id, ts: r.ts },
+        `ลบค่าใช้จ่าย "${r.category || ""}${r.description ? " — " + r.description : ""}" ${money(r.amount)}?`,
+        "ลบค่าใช้จ่ายแล้ว", afterRecordChange), true),
+    ],
+  }));
+}
+
+// แก้ไขรายการขาย (เรียกจากหน้าสรุปยอด)
+function editSaleRecord(r) {
+  openEditModal({
+    title: "แก้ไขรายการขาย",
+    hint: `${r.id} · ${fmtDT(r.date)} — ถ้าแก้จำนวน ระบบจะปรับบรรจุภัณฑ์ที่หักไปตามสัดส่วนให้`,
+    fields: [
+      { key: "itemName", label: "ชื่อรายการขาย", value: r.itemName || "", required: true },
+      { key: "channel", label: "ช่องทางการจำหน่าย", type: "select", value: r.channel || "", options: optList(["", ...Object.keys(CHANNEL_PRICE_KEY)], r.channel) },
+      { key: "qty", label: "จำนวน", type: "number", value: r.qty, min: "0.01", required: true },
+      { key: "sellPrice", label: "ราคาขาย/หน่วย (บาท)", type: "number", value: r.sellPrice, min: "0", required: true,
+        hint: "ยอดรวมคำนวณใหม่ให้อัตโนมัติ (ช่องทาง Line Man หักค่าคอมมิชชั่น 32.10%)" },
+      { key: "note", label: "หมายเหตุ", value: r.note || "" },
+    ],
+    onSave: v => apiPost("updateStockOut", { id: r.id, ts: r.ts, itemName: v.itemName, channel: v.channel, qty: v.qty, sellPrice: v.sellPrice, note: v.note }),
+    onDone: afterRecordChange, okMsg: "แก้ไขรายการขายแล้ว",
+  });
+}
+
+// ---------- หน้าสต๊อกคงเหลือ: ปุ่มต่อสินค้า ----------
+function productActions(p) {
+  const id = p["รหัสสินค้า"], name = p["ชื่อสินค้า"], unit = p["หน่วยนับ"];
+  const stock = Number(p["สต๊อกปัจจุบัน"]) || 0;
+  return actionRow([
+    actBtn("แก้ไข", () => openEditModal({
+      title: "แก้ไขสินค้า", hint: id,
+      fields: [
+        { key: "name", label: "ชื่อสินค้า", value: name, required: true },
+        { key: "category", label: "หมวดหมู่", type: "select", value: p["หมวดหมู่"], options: optList(PRODUCT_CATEGORIES, p["หมวดหมู่"]) },
+        { key: "unit", label: "หน่วยนับ", value: unit, required: true },
+        { key: "minStock", label: "สต๊อกขั้นต่ำ", type: "number", value: p["สต๊อกขั้นต่ำ"], min: "0", required: true },
+      ],
+      onSave: v => apiPost("updateProduct", { productId: id, name: v.name, category: v.category, unit: v.unit, minStock: v.minStock }),
+      onDone: () => { refreshProducts(); refreshLowStock(); }, okMsg: "แก้ไขสินค้าแล้ว",
+    })),
+    actBtn("ปรับจำนวน", () => {
+      state.adjustTarget = { id, name, stock, unit };
+      document.getElementById("adjust-product-name").textContent = name;
+      document.getElementById("adjust-old").value = `${stock} ${unit}`;
+      document.getElementById("adjust-new").value = stock;
+      document.getElementById("adjust-note").value = "";
+      openModal("modal-adjust");
+    }),
+    actBtn("ลบ", () => deleteWithConfirm("deleteProduct", { productId: id },
+      `ลบสินค้า "${name}" ออกจากระบบ?\n` + (stock > 0 ? `คงเหลือ ${stock} ${unit} จะหายไปด้วย\n` : "") +
+      "สินค้านี้จะถูกถอดออกจาก Code ที่ผูกไว้ (ประวัติการขาย/ตัดสต๊อกเก่ายังอยู่ครบ)",
+      res => "ลบสินค้าแล้ว" + (res.codes && res.codes.length ? " · ถอดออกจาก Code: " + res.codes.join(", ") : ""),
+      () => { refreshProducts(); refreshLowStock(); }), true),
+  ]);
+}
+
+// ---------- พนักงาน ----------
+function editEmployee(emp) {
+  openEditModal({
+    title: "แก้ไขพนักงาน", hint: emp.id,
+    fields: [
+      { key: "name", label: "ชื่อ", value: emp.name, required: true },
+      { key: "pin", label: "PIN ใหม่ (4 หลัก)", placeholder: "เว้นว่าง = ไม่เปลี่ยน PIN", maxlength: 4 },
+      { key: "role", label: "สิทธิ์", type: "select", value: emp.role, options: [{ v: "staff", t: "พนักงาน (staff)" }, { v: "admin", t: "ผู้ดูแลระบบ (admin)" }] },
+      { key: "status", label: "สถานะ", type: "select", value: emp.status, options: [{ v: "active", t: "ใช้งาน" }, { v: "inactive", t: "ระงับ (เข้าระบบไม่ได้)" }] },
+    ],
+    onSave: async v => {
+      const res = await apiPost("updateEmployee", { empId: emp.id, name: v.name, pin: v.pin, role: v.role, status: v.status });
+      if (res.ok && state.employee && emp.id === state.employee.id) {
+        state.employee.name = v.name.trim();
+        localStorage.setItem("2kor_employee", JSON.stringify(state.employee));
+        const t = document.getElementById("topbar-emp");
+        if (t) t.textContent = state.employee.name + (state.employee.role === "admin" ? " · ผู้ดูแลระบบ" : " · พนักงาน");
+      }
+      return res;
+    },
+    onDone: loadEmployeesList, okMsg: "แก้ไขพนักงานแล้ว",
+  });
+}
+
+// ---------- ปุ่มลบ Code / ลบเมนู / เลื่อนลำดับเมนู (ปุ่มวาดใน renderCodesList / renderMenusAdminList) ----------
+document.getElementById("codes-list").addEventListener("click", (e) => {
+  const b = e.target.closest(".btn-del-code");
+  if (!b) return;
+  const c = state.codes.find(x => x.id === b.dataset.codeId);
+  if (!c) return;
+  deleteWithConfirm("deleteCode", { codeId: c.id }, `ลบ Code "${c.name}"?`, "ลบ Code แล้ว", loadCodes);
+});
+document.getElementById("menus-list").addEventListener("click", async (e) => {
+  const del = e.target.closest(".btn-del-menu");
+  if (del) {
+    const m = state.menus.find(x => x.id === del.dataset.menuId);
+    if (!m) return;
+    deleteWithConfirm("deleteMenu", { menuId: m.id },
+      `ลบเมนู "${m.displayName}" ถาวร?\n(ถ้าแค่ไม่อยากให้แสดงชั่วคราว ให้ใช้ปุ่ม "ซ่อน" แทน)`, "ลบเมนูแล้ว", loadMenusAdmin);
+    return;
+  }
+  const mv = e.target.closest(".btn-move-menu");
+  if (mv) {
+    mv.disabled = true;
+    const res = await apiPost("moveMenu", { menuId: mv.dataset.menuId, dir: mv.dataset.dir });
+    if (res.ok) loadMenusAdmin(); else { toast(res.error || "เลื่อนไม่สำเร็จ", true); mv.disabled = false; }
+  }
+});
+
+// ---------- ติดตั้งส่วนเสริมบนหน้าที่มีอยู่แล้ว ----------
+(function installEditExtras() {
+  const pl = document.getElementById("products-list");
+  if (pl && !document.getElementById("prod-show-empty")) {
+    const d = document.createElement("label");
+    d.style.cssText = "display:flex;align-items:center;gap:8px;margin:0 2px 10px;font-size:13px;color:#7a7566;cursor:pointer";
+    d.innerHTML = '<input type="checkbox" id="prod-show-empty"> แสดงสินค้าที่หมดสต๊อกด้วย (ไว้แก้ไข/ลบ)';
+    pl.parentNode.insertBefore(d, pl);
+    d.querySelector("input").addEventListener("change", e => { showEmptyStock = e.target.checked; renderProductsList(); });
+  }
+  ensureSummarySections();
+})();
+
 // ---- ผลไม้วันนี้: เปิด/ปิดว่าวันนี้มีผลไม้ชนิดไหน (ลูกค้าเลือกได้เฉพาะที่เปิดอยู่) ----
 async function openFruits() {
   let page = document.getElementById("fruit-page");
@@ -2226,7 +2577,17 @@ async function openFruits() {
     const paint = () => { b.className = "btn" + (f.on ? "" : " outline"); b.textContent = `${f.name} — ${f.on ? "มีวันนี้" : "หมด/ไม่มี"}`; };
     paint();
     b.onclick = async () => { f.on = !f.on; paint(); const r = await apiPost("setFruit", { id: f.id, on: f.on }); if (!r.ok) { f.on = !f.on; paint(); toast(r.error || "บันทึกไม่สำเร็จ", true); } };
-    grid.appendChild(b);
+    if (state.employee && state.employee.role === "admin") {
+      const w = document.createElement("div"); w.style.cssText = "display:flex;gap:6px;align-items:stretch";
+      b.style.flex = "1";
+      w.append(b,
+        actBtn("แก้ชื่อ", () => openEditModal({
+          title: "แก้ชื่อผลไม้", fields: [{ key: "name", label: "ชื่อผลไม้", value: f.name, required: true }],
+          onSave: v => apiPost("updateFruit", { id: f.id, name: v.name }), onDone: () => openFruits(), okMsg: "แก้ชื่อแล้ว",
+        })),
+        actBtn("ลบ", () => deleteWithConfirm("deleteFruit", { id: f.id }, `ลบผลไม้ "${f.name}" ออกจากรายการ?`, "ลบแล้ว", () => openFruits()), true));
+      grid.appendChild(w);
+    } else grid.appendChild(b);
   });
   document.getElementById("fruit-add").onclick = async () => {
     const r = await apiPost("addFruit", { name: document.getElementById("fruit-new").value });
