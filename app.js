@@ -1921,7 +1921,26 @@ async function enableOrderAlerts() {
     if ("Notification" in window && Notification.permission === "default") await Notification.requestPermission();
     await keepScreenOn();
     document.getElementById("ord-sound").style.display = "none";
+    localStorage.setItem("2kor_alert_day", todayStr()); // จำว่าวันนี้เปิดแล้ว ข้ามวันค่อยกดใหม่
   } catch (e) { toast("เปิดเสียงไม่สำเร็จ ลองแตะอีกครั้ง", true); }
+}
+
+// เปิดระบบแจ้งเตือนเองถ้าวันนี้เคยกดไปแล้ว (ไม่ต้องกดปุ่มซ้ำ)
+// เบราว์เซอร์ห้ามเล่นเสียงจนกว่าจะมีการ "แตะ" หน้านี้อย่างน้อย 1 ครั้ง จึงทำ 2 ขั้น:
+// 1) ถ้าเคยแตะแล้วในหน้านี้ (เช่น แตะปุ่ม PIN ตอนล็อกอิน) เปิดทันที
+// 2) ถ้ายังไม่เคยแตะ รอแตะครั้งแรกตรงไหนของหน้าจอก็ได้ แล้วเปิดให้เงียบๆ
+function autoEnableOrderAlerts() {
+  if (ORD.soundOn || localStorage.getItem("2kor_alert_day") !== todayStr()) return;
+  ORD.rememberedToday = true;
+  const hasTapped = navigator.userActivation && navigator.userActivation.hasBeenActive;
+  if (hasTapped) { enableOrderAlerts(); return; }
+  const once = () => {
+    document.removeEventListener("pointerdown", once, true);
+    document.removeEventListener("keydown", once, true);
+    enableOrderAlerts();
+  };
+  document.addEventListener("pointerdown", once, true);
+  document.addEventListener("keydown", once, true);
 }
 async function keepScreenOn() {
   try { if ("wakeLock" in navigator && !ORD.wake) { ORD.wake = await navigator.wakeLock.request("screen"); ORD.wake.addEventListener("release", () => { ORD.wake = null; }); } } catch (e) {}
@@ -1972,7 +1991,8 @@ async function pollOrders() {
 
   document.querySelectorAll(".ord-badge").forEach(b => { b.textContent = fresh.length; b.style.display = fresh.length ? "block" : "none"; });
   document.title = fresh.length ? `(${fresh.length}) ออเดอร์ใหม่ — ` + ORD.baseTitle : ORD.baseTitle;
-  document.getElementById("ord-sound").style.display = (!ORD.soundOn && fresh.length) || (!ORD.soundOn) ? "block" : "none";
+  // ถ้าวันนี้กดไว้แล้ว (รอแตะหน้าจอครั้งแรก) ซ่อนปุ่มไว้ก่อน โผล่เฉพาะตอนมีออเดอร์ใหม่ที่ยังไม่มีเสียง
+  document.getElementById("ord-sound").style.display = (!ORD.soundOn && (!ORD.rememberedToday || fresh.length)) ? "block" : "none";
 
   if (fresh.some(o => String(o.when).slice(0, 10) >= todayStr())) beep(); // ดังซ้ำทุกรอบจนกว่าจะมีคนกดรับ (ออเดอร์ค้างจากวันก่อนไม่ดัง แต่ยังขึ้นสีแดงในหน้าออเดอร์)
   if (brandNew.length && "Notification" in window && Notification.permission === "granted" && document.hidden) {
@@ -1983,6 +2003,7 @@ async function pollOrders() {
 }
 setInterval(pollOrders, 15000);
 setTimeout(pollOrders, 2500);
+setTimeout(autoEnableOrderAlerts, 1500);
 
 function todayStr() { const d = new Date(); return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); }
 
