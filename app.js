@@ -24,6 +24,9 @@ const state = {
 // index.html และ SALES_CHANNELS ฝั่ง Code.gs — ใช้แมปไปหา key ราคาที่ตั้งไว้
 // ต่อเมนู 1 รายการ (ดู getMenuPriceForChannel ด้านล่าง)
 const CHANNEL_PRICE_KEY = { "หน้าบ้าน": "priceFront", "จ๊ะนวล": "priceJanuan", "Line Man": "priceLineman" };
+// หมวดที่ขายเป็นน้ำหนัก (กก.) — บรรจุภัณฑ์ (เช่น ถุงหูหิ้ว) หัก "ต่อรายการขาย" ตาม Code ตรงๆ
+// ไม่คูณด้วยน้ำหนัก ต้องตรงกับ FIXED_PACKAGING_CATEGORIES ใน Code.gs
+const FIXED_PACKAGING_CATEGORIES = ["ผลไม้สดชั่งกิโล"];
 // คืนราคาตายตัวของเมนู m สำหรับช่องทาง channel ถ้าไม่ได้ตั้งไว้ (หรือช่องทาง
 // ไม่รู้จัก) คืนค่าว่าง '' ให้พนักงานกรอกเองตอนขายเหมือนเดิม
 function getMenuPriceForChannel(m, channel) {
@@ -1404,6 +1407,7 @@ document.getElementById("btn-confirm-sale-summary").addEventListener("click", as
       sellPrice: p.price,
       packaging,
       employee: state.employee.name,
+      fixedPackaging: FIXED_PACKAGING_CATEGORIES.includes(p.menu.category),
     });
     if (res.ok) {
       collapseSaleTile(p.tile);
