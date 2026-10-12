@@ -83,11 +83,13 @@ h2 .ct{font-size:12px;color:#b23a3a;font-family:'IBM Plex Sans Thai',sans-serif;
 <script src="./config.js"></script>
 <script>
 const $=id=>document.getElementById(id),sheet=$('sheet');
-let cfg=null,cart={},picks=[];const welcome=$('welcome');
+let cfg=null,cart={},picks=[],units={};const welcome=$('welcome');
 const baht=n=>'฿'+Number(n).toLocaleString('th-TH',{maximumFractionDigits:2});
 const pad=n=>String(n).padStart(2,'0');
 const fmt=d=>d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());
-const total=()=>cfg.menus.reduce((s,m)=>s+(cart[m.id]||0)*m.price,0)+picks.reduce((s,p)=>s+p.qty*p.price,0);
+const priceOf=m=>(m.weighed&&units[m.id]==='กิโล')?m.priceKg:m.price;
+const unitOf=m=>m.weighed?(units[m.id]||'ลูก'):'';
+const total=()=>cfg.menus.reduce((s,m)=>s+(cart[m.id]||0)*priceOf(m),0)+picks.reduce((s,p)=>s+p.qty*p.price,0);
 const count=()=>Object.values(cart).reduce((a,b)=>a+b,0)+picks.reduce((s,p)=>s+p.qty,0);
 
 async function load(){
@@ -150,6 +152,14 @@ function render(){
       const nm=Object.assign(document.createElement('div'),{className:'nm',textContent:m.name});
       const pr=Object.assign(document.createElement('div'),{className:'pr',textContent:baht(m.price)});
       const st=document.createElement('div');st.className='step';
+      let us=null;
+      if(m.weighed){
+        us=document.createElement('select');us.style.cssText='margin-top:8px;padding:8px;font-size:14px';
+        ['ลูก','กิโล'].forEach(u=>us.add(new Option('หน่วย: '+u,u)));
+        us.value=units[m.id]||'ลูก';units[m.id]=us.value;
+        pr.textContent=baht(priceOf(m))+' / '+us.value;
+        us.onchange=()=>{units[m.id]=us.value;pr.textContent=baht(priceOf(m))+' / '+us.value;bar();};
+      }
       const minus=Object.assign(document.createElement('button'),{textContent:'−'});
       const q=Object.assign(document.createElement('span'),{textContent:'0'});
       const plus=Object.assign(document.createElement('button'),{textContent:'+',className:'plus'});
@@ -159,7 +169,7 @@ function render(){
       if(m.pickMax>0){
         const pb=Object.assign(document.createElement('button'),{className:'btn',textContent:cfg.fruits.length?'เลือกผลไม้':'วันนี้ยังไม่เปิดให้เลือก',disabled:!cfg.fruits.length});
         pb.style.cssText='margin-top:8px;padding:10px;font-size:14px';pb.onclick=()=>openPick(m);c.append(img,nm,pr,pb);
-      }else{st.append(minus,q,plus);c.append(img,nm,pr,st);}
+      }else{st.append(minus,q,plus);if(us)c.append(img,nm,pr,us,st);else c.append(img,nm,pr,st);}
       g.appendChild(c);
     });
   });
@@ -198,7 +208,7 @@ $('cartBtn').onclick=()=>{
   const L=$('lines');L.innerHTML='';
   cfg.menus.filter(m=>cart[m.id]).forEach(m=>{
     const d=document.createElement('div');d.className='line';
-    d.append(Object.assign(document.createElement('span'),{textContent:m.name+' x '+cart[m.id]}),Object.assign(document.createElement('span'),{textContent:baht(m.price*cart[m.id])}));L.appendChild(d);
+    d.append(Object.assign(document.createElement('span'),{textContent:m.name+' x '+cart[m.id]+(m.weighed?' '+unitOf(m):'')}),Object.assign(document.createElement('span'),{textContent:baht(priceOf(m)*cart[m.id])}));L.appendChild(d);
   });
   picks.forEach((p,i)=>{
     const d=document.createElement('div');d.className='line';
@@ -217,7 +227,7 @@ $('submit').onclick=async()=>{
   if(!$('time').value){$('err').textContent='ไม่มีเวลาว่างให้เลือก กรุณาเลือกวันอื่น';return;}
   const body={action:'createOrder',name:$('name').value,phone:$('phone').value,method,when:$('day').value+' '+$('time').value,
     address:$('addr').value,note:$('note').value,website:$('website').value,
-    items:Object.keys(cart).filter(k=>cart[k]>0).map(k=>({id:k,qty:cart[k]})).concat(picks.map(p=>({id:p.id,qty:p.qty,fruits:p.fruits})))};
+    items:Object.keys(cart).filter(k=>cart[k]>0).map(k=>{const m=cfg.menus.find(x=>x.id===k);return m&&m.weighed?{id:k,qty:cart[k],unit:units[k]||'ลูก'}:{id:k,qty:cart[k]};}).concat(picks.map(p=>({id:p.id,qty:p.qty,fruits:p.fruits})))};
   $('submit').disabled=true;$('submit').textContent='กำลังส่ง…';$('err').textContent='';
   try{
     const r=await (await fetch(GAS_URL,{method:'POST',body:JSON.stringify(body)})).json();
@@ -275,7 +285,7 @@ async function refreshMine(){
     const st=Object.assign(document.createElement('span'),{className:'st'+(o.status==='เสร็จสิ้น'?' ok':o.status==='ยกเลิก'?' no':''),textContent:o.status});
     const hint=o.status==='พร้อมรับ/กำลังส่ง'?(o.method==='รับเอง'?'พร้อมให้มารับที่ร้านแล้ว':'กำลังจัดส่ง'):HINT[o.status]||'';
     c.append(t,st,Object.assign(document.createElement('div'),{className:'sub',textContent:hint}),Object.assign(document.createElement('div'),{className:'sub',textContent:o.method+' · นัด '+o.when}));
-    o.items.forEach(i=>c.appendChild(Object.assign(document.createElement('div'),{className:'sub',textContent:i.name+' x '+i.qty+(i.fruits&&i.fruits.length?' : '+i.fruits.join(', '):'')})));
+    o.items.forEach(i=>c.appendChild(Object.assign(document.createElement('div'),{className:'sub',textContent:i.name+' x '+i.qty+(i.unit?' '+i.unit:'')+(i.fruits&&i.fruits.length?' : '+i.fruits.join(', '):'')})));
     box.appendChild(c);
   });
 }

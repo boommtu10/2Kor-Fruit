@@ -50,6 +50,7 @@
 .sm-tile-close{position:absolute;top:-32px;right:6px;background:rgba(0,0,0,.08);border:none;border-radius:50%;width:24px;height:24px;font-size:13px;line-height:1;cursor:pointer;color:#4a453a}
 .sm-tile-fields{display:flex;flex-direction:column;gap:6px}
 .sm-tile-fields input{width:100%;box-sizing:border-box;padding:8px 10px;border:1.4px solid #d8d2c2;border-radius:9px;font-family:inherit;font-size:14px}
+.sm-tile-fields select{width:100%;box-sizing:border-box;padding:8px 10px;border:1.4px solid #d8d2c2;border-radius:9px;font-family:inherit;font-size:14px;background:#fff}
 .sm-tile-err{font-size:11.5px;color:#c0392b}
 .sm-tile-confirm{background:#2F5233;color:#fff;border:none;border-radius:9px;padding:9px;font-family:inherit;font-size:13px;font-weight:700;cursor:pointer}
 .sm-tile-confirm:active{opacity:.85}
@@ -559,6 +560,11 @@
             <input type="number" id="menu-price-lineman" min="0" step="any" placeholder="เว้นว่าง = กรอกเอง">
           </div>
         </div>
+      </div>
+      <div class="field hidden" id="menu-kg-field">
+        <label>ราคาต่อกิโล (เฉพาะผลไม้สดชั่งกิโล)</label>
+        <input type="number" id="menu-price-kg" min="0" step="any" placeholder="เว้นว่าง = ไม่มีตัวเลือกกิโลในหน้าลูกค้า">
+        <div class="hint">ราคา "หน้าบ้าน" ด้านบนคือราคาต่อลูก ถ้าตั้งราคาต่อกิโลตรงนี้ ลูกค้าจะเลือกสั่งเป็นลูกหรือกิโลได้ ถ้าเมนูไหนราคาหน้าบ้านเป็นราคาต่อกิโลอยู่แล้ว (พวง/ช่อ) ให้เว้นว่างไว้</div>
       </div>
       <div class="field">
         <label>Code (บรรจุภัณฑ์ที่จะหักอัตโนมัติ)</label>

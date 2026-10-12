@@ -27,6 +27,9 @@ const CHANNEL_PRICE_KEY = { "หน้าบ้าน": "priceFront", "จ๊ะ
 // หมวดที่ขายเป็นน้ำหนัก (กก.) — บรรจุภัณฑ์ (เช่น ถุงหูหิ้ว) หัก "ต่อรายการขาย" ตาม Code ตรงๆ
 // ไม่คูณด้วยน้ำหนัก ต้องตรงกับ FIXED_PACKAGING_CATEGORIES ใน Code.gs
 const FIXED_PACKAGING_CATEGORIES = ["ผลไม้สดชั่งกิโล"];
+// หมวดเดียวกันนี้ต้องเลือก "หน่วยที่ขาย" ด้วย (กิโล หรือ ลูก) ต้องตรงกับ WEIGHED_UNITS ใน Code.gs (ราคาหน้าบ้านของเมนูเหล่านี้ = ราคาต่อลูก ส่วนราคาต่อกิโลเก็บแยกใน priceKg)
+const WEIGHED_UNITS = ["ลูก", "กิโล"];
+const isWeighedMenu = (m) => !!m && FIXED_PACKAGING_CATEGORIES.includes(m.category);
 // คืนราคาตายตัวของเมนู m สำหรับช่องทาง channel ถ้าไม่ได้ตั้งไว้ (หรือช่องทาง
 // ไม่รู้จัก) คืนค่าว่าง '' ให้พนักงานกรอกเองตอนขายเหมือนเดิม
 function getMenuPriceForChannel(m, channel) {
@@ -987,7 +990,13 @@ function fillMenuCategorySelect(selectedCategory) {
   newInput.classList.add("hidden");
   newInput.value = "";
 }
+// ช่อง "ราคาต่อกิโล" โชว์เฉพาะตอนเลือกหมวดที่ขายเป็นน้ำหนัก (ผลไม้สดชั่งกิโล)
+function updateMenuKgFieldVisibility() {
+  const cat = document.getElementById("menu-category").value;
+  document.getElementById("menu-kg-field").classList.toggle("hidden", !FIXED_PACKAGING_CATEGORIES.includes(cat));
+}
 document.getElementById("menu-category").addEventListener("change", (e) => {
+  updateMenuKgFieldVisibility();
   const input = document.getElementById("menu-category-new");
   const isNew = e.target.value === "__new__";
   input.classList.toggle("hidden", !isNew);
@@ -1007,11 +1016,13 @@ function openMenuModal(menu) {
   document.getElementById("menu-price-front").value = (menu && menu.priceFront !== "" && menu.priceFront !== undefined) ? menu.priceFront : "";
   document.getElementById("menu-price-januan").value = (menu && menu.priceJanuan !== "" && menu.priceJanuan !== undefined) ? menu.priceJanuan : "";
   document.getElementById("menu-price-lineman").value = (menu && menu.priceLineman !== "" && menu.priceLineman !== undefined) ? menu.priceLineman : "";
+  document.getElementById("menu-price-kg").value = (menu && menu.priceKg !== "" && menu.priceKg !== undefined && menu.priceKg !== null) ? menu.priceKg : "";
   document.getElementById("menu-order").value = menu ? menu.order : "";
   document.getElementById("menu-order-field").classList.toggle("hidden", !menu);
   document.getElementById("menu-status-field").classList.toggle("hidden", !menu);
   if (menu) document.getElementById("menu-status").value = menu.status;
   fillMenuCategorySelect(menu ? menu.category : "");
+  updateMenuKgFieldVisibility();
   fillMenuCodeSelect(menu ? menu.codeId : "");
   setMenuImagePreview(menu ? menu.image : "");
   openModal("modal-menu");
@@ -1041,6 +1052,8 @@ document.getElementById("form-add-menu").addEventListener("submit", async (e) =>
   const payload = {
     name, packaging, category,
     priceFront: priceFrontVal, priceJanuan: priceJanuanVal, priceLineman: priceLinemanVal,
+    // หมวดอื่นไม่ใช้ราคาต่อกิโล ส่งค่าว่างเพื่อเคลียร์ค่าเก่า (กรณีย้ายเมนูออกจากหมวดชั่งกิโล)
+    priceKg: FIXED_PACKAGING_CATEGORIES.includes(category) ? document.getElementById("menu-price-kg").value : "",
     codeId, image: state.menuImageDataUrl || ""
   };
   if (menuId) {
@@ -1076,7 +1089,7 @@ function formatMenuPrices(m) {
   return Object.keys(CHANNEL_PRICE_KEY).map(ch => {
     const v = getMenuPriceForChannel(m, ch);
     return `${ch} ${v === "" ? "กรอกเอง" : money(v)}`;
-  }).join(" · ");
+  }).join(" · ") + (m.priceKg !== "" && m.priceKg !== undefined && m.priceKg !== null && Number(m.priceKg) > 0 ? ` · ต่อกิโล ${money(m.priceKg)}` : "");
 }
 
 function renderMenusAdminList() {
@@ -1235,6 +1248,7 @@ function buildSalesMenuTile(m) {
       <button type="button" class="sm-tile-close" title="ยกเลิก">✕</button>
       <div class="sm-tile-fields">
         <input type="number" class="sm-tile-qty" min="0.01" step="any" placeholder="จำนวน">
+        ${isWeighedMenu(m) ? `<select class="sm-tile-unit">${WEIGHED_UNITS.map(u => `<option value="${u}">${u}</option>`).join("")}</select>` : ""}
         <input type="number" class="sm-tile-price" min="0" step="any" placeholder="ราคา/หน่วย" value="${hasPrice ? price : ""}">
       </div>
       <div class="sm-tile-err hidden"></div>
@@ -1282,6 +1296,8 @@ function collapseSaleTile(tile) {
   const menu = state.salesMenus.find(m => m.id === tile.dataset.menuId);
   const price = getMenuPriceForChannel(menu, state.salesChannel);
   tile.querySelector(".sm-tile-qty").value = "";
+  const unitSel = tile.querySelector(".sm-tile-unit");
+  if (unitSel) unitSel.value = WEIGHED_UNITS[0];
   tile.querySelector(".sm-tile-price").value = price !== "" ? price : "";
   hideTileError(tile);
   tile.querySelector(".sm-tile-confirm").classList.add("hidden");
@@ -1314,6 +1330,19 @@ document.getElementById("sm-menu-grid").addEventListener("click", (e) => {
     openSaleTile(menuBtn.closest(".sm-tile"));
   }
 });
+// เปลี่ยนหน่วยในการ์ดผลไม้ชั่งกิโล: ถ้าเมนูตั้ง "ราคาต่อกิโล" ไว้และขายช่องทางหน้าบ้าน ให้เติมราคาตามหน่วยให้อัตโนมัติ
+// (กิโล = ราคาต่อกิโล, ลูก = ราคาหน้าบ้านปกติ) พนักงานแก้ราคาเองได้เสมอ ช่องทางอื่นไม่แตะราคา
+document.getElementById("sm-menu-grid").addEventListener("change", (e) => {
+  if (!e.target.classList.contains("sm-tile-unit")) return;
+  const tile = e.target.closest(".sm-tile");
+  const menu = state.salesMenus.find(m => m.id === tile.dataset.menuId);
+  if (!menu || state.salesChannel !== "หน้าบ้าน") return;
+  const hasKg = menu.priceKg !== "" && menu.priceKg !== undefined && menu.priceKg !== null;
+  if (!hasKg) return;
+  const p = e.target.value === "กิโล" ? menu.priceKg : getMenuPriceForChannel(menu, state.salesChannel);
+  tile.querySelector(".sm-tile-price").value = p !== "" ? p : "";
+  hideTileError(tile);
+});
 document.getElementById("sm-menu-grid").addEventListener("input", (e) => {
   const tile = e.target.closest(".sm-tile");
   if (!tile) return;
@@ -1344,7 +1373,8 @@ function collectPendingSaleItems() {
       blocked = true;
       return;
     }
-    items.push({ tile, menu, qty, price });
+    const unitSel = tile.querySelector(".sm-tile-unit");
+    items.push({ tile, menu, qty, price, unit: unitSel ? unitSel.value : "" });
   });
   return { items, blocked };
 }
@@ -1357,7 +1387,7 @@ function renderSaleSummaryList(items) {
       const total = computeSaleTotal(p.qty, p.price, state.salesChannel);
       return `
       <div class="list-row">
-        <div class="main"><div class="title">${p.menu.displayName}</div><div class="sub">${state.salesChannel} · ${p.qty} x ${money(p.price)}</div></div>
+        <div class="main"><div class="title">${p.menu.displayName}</div><div class="sub">${state.salesChannel} · ${p.qty}${p.unit ? " " + p.unit : ""} x ${money(p.price)}</div></div>
         <div class="trail">${money(total)}</div>
       </div>`;
     })
@@ -1400,7 +1430,8 @@ document.getElementById("btn-confirm-sale-summary").addEventListener("click", as
     const code = state.codes.find((c) => c.id === p.menu.codeId);
     const packaging = code ? code.packaging.map((x) => ({ productId: x.productId, qty: x.qty })) : [];
     const res = await apiPost("stockOut", {
-      itemName: p.menu.displayName,
+      // สินค้าชั่งกิโล: ต่อหน่วยท้ายชื่อ เช่น "แอปเปิ้ล ฟูจิ (ลูก)" จะได้แยกในสรุป/สถิติ ไม่เอากิโลไปรวมกับลูก
+      itemName: p.menu.displayName + (p.unit ? ` (${p.unit})` : ""),
       code: code ? code.name : "",
       channel: state.salesChannel,
       qty: p.qty,
@@ -2035,7 +2066,7 @@ function orderCard(o) {
   const phone = el("div", "ord-sub"); const a = el("a", "", o.phone); a.href = "tel:" + o.phone; phone.append("โทร ", a, ` · ${o.method} · นัด ${o.when}`);
   c.append(top, phone);
   if (o.address) c.append(el("div", "ord-sub", "ที่อยู่: " + o.address));
-  o.items.forEach(it => c.append(el("div", "ord-sub", `${it.name} x ${it.qty}` + (it.fruits && it.fruits.length ? " : " + it.fruits.join(", ") : ""))));
+  o.items.forEach(it => c.append(el("div", "ord-sub", `${it.name} x ${it.qty}${it.unit ? " " + it.unit : ""}` + (it.fruits && it.fruits.length ? " : " + it.fruits.join(", ") : ""))));
   if (o.note) c.append(el("div", "ord-sub", "หมายเหตุ: " + o.note));
   c.append(el("div", "ord-sub", `สถานะ: ${o.status}${o.staff ? " (โดย " + o.staff + ")" : ""}`));
   const next = { "รอรับ": [["รับออเดอร์", "รับแล้ว", "btn mango"], ["ยกเลิก", "ยกเลิก", "btn outline ord-cancel"]], "รับแล้ว": [["พร้อมรับ/กำลังส่ง", "พร้อมรับ/กำลังส่ง", "btn"], ["เสร็จสิ้น", "เสร็จสิ้น", "btn outline"]], "พร้อมรับ/กำลังส่ง": [["เสร็จสิ้น", "เสร็จสิ้น", "btn"]] }[o.status] || [];
@@ -2215,7 +2246,7 @@ function printOrder(o) {
   const qtyAll = o.items.reduce((s, it) => s + it.qty, 0);
   const rows = o.items.map(it =>
     `<div class="it"><div class="r"><span>${esc(it.name)}</span></div>` +
-    `<div class="r"><span>&nbsp;&nbsp;${money(it.price)} x ${it.qty}</span><span>${money(it.price * it.qty)}</span></div>` +
+    `<div class="r"><span>&nbsp;&nbsp;${money(it.price)} x ${it.qty}${it.unit ? " " + esc(it.unit) : ""}</span><span>${money(it.price * it.qty)}</span></div>` +
     (it.fruits && it.fruits.length ? `<div class="fr">ผลไม้: ${esc(it.fruits.join(", "))}</div>` : "") + `</div>`).join("");
   const line = (k, v) => v ? `<div class="kv"><b>${k}</b> ${esc(v)}</div>` : "";
   const body = `
