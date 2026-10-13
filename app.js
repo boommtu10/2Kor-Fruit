@@ -703,7 +703,7 @@ function renderPackagingChecklist(containerId, list, emptyMsg) {
         <input type="checkbox" class="pack-check" data-pack-id="${p["รหัสสินค้า"]}" data-pack-name="${p["ชื่อสินค้า"]}">
         <span>${p["ชื่อสินค้า"]}${p["หมวดหมู่"] === "อื่นๆ" ? ' <span class="hint">[อื่นๆ]</span>' : ""} ${statusLabel}</span>
       </label>
-      <input type="number" class="pack-qty" data-pack-id="${p["รหัสสินค้า"]}" value="1" min="1" step="1" style="width:64px" disabled>
+      <input type="number" class="pack-qty" data-pack-id="${p["รหัสสินค้า"]}" value="1" min="0.5" step="0.5" style="width:72px" disabled>
     `;
     wrap.appendChild(row);
   });
