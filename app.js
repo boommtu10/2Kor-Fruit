@@ -24,12 +24,12 @@ const state = {
 // index.html และ SALES_CHANNELS ฝั่ง Code.gs — ใช้แมปไปหา key ราคาที่ตั้งไว้
 // ต่อเมนู 1 รายการ (ดู getMenuPriceForChannel ด้านล่าง)
 const CHANNEL_PRICE_KEY = { "หน้าบ้าน": "priceFront", "จ๊ะนวล": "priceJanuan", "Line Man": "priceLineman" };
-// หมวดที่ขายเป็นน้ำหนัก (กก.) — บรรจุภัณฑ์ (เช่น ถุงหูหิ้ว) หัก "ต่อรายการขาย" ตาม Code ตรงๆ
-// ไม่คูณด้วยน้ำหนัก ต้องตรงกับ FIXED_PACKAGING_CATEGORIES ใน Code.gs
-const FIXED_PACKAGING_CATEGORIES = ["ผลไม้สดชั่งกิโล"];
+// หมวดผลไม้สดชั่งกิโล: ไม่ผูก Code ไม่หักบรรจุภัณฑ์ตอนขาย (ถุงตัดสต๊อกเป็นรอบๆ เอง) และต้องเลือกหน่วย ลูก/กิโล
+// ต้องตรงกับ WEIGHED_CATEGORIES ใน Code.gs (ราคาหน้าบ้านของเมนูเหล่านี้ = ราคาต่อลูก ราคาต่อกิโลเก็บแยกใน priceKg)
+const WEIGHED_CATEGORIES = ["ผลไม้สดชั่งกิโล"];
 // หมวดเดียวกันนี้ต้องเลือก "หน่วยที่ขาย" ด้วย (กิโล หรือ ลูก) ต้องตรงกับ WEIGHED_UNITS ใน Code.gs (ราคาหน้าบ้านของเมนูเหล่านี้ = ราคาต่อลูก ส่วนราคาต่อกิโลเก็บแยกใน priceKg)
 const WEIGHED_UNITS = ["ลูก", "กิโล"];
-const isWeighedMenu = (m) => !!m && FIXED_PACKAGING_CATEGORIES.includes(m.category);
+const isWeighedMenu = (m) => !!m && WEIGHED_CATEGORIES.includes(m.category);
 // คืนราคาตายตัวของเมนู m สำหรับช่องทาง channel ถ้าไม่ได้ตั้งไว้ (หรือช่องทาง
 // ไม่รู้จัก) คืนค่าว่าง '' ให้พนักงานกรอกเองตอนขายเหมือนเดิม
 function getMenuPriceForChannel(m, channel) {
@@ -993,7 +993,11 @@ function fillMenuCategorySelect(selectedCategory) {
 // ช่อง "ราคาต่อกิโล" โชว์เฉพาะตอนเลือกหมวดที่ขายเป็นน้ำหนัก (ผลไม้สดชั่งกิโล)
 function updateMenuKgFieldVisibility() {
   const cat = document.getElementById("menu-category").value;
-  document.getElementById("menu-kg-field").classList.toggle("hidden", !FIXED_PACKAGING_CATEGORIES.includes(cat));
+  const weighed = WEIGHED_CATEGORIES.includes(cat);
+  document.getElementById("menu-kg-field").classList.toggle("hidden", !weighed);
+  // หมวดนี้ไม่ผูก Code: ซ่อนช่อง Code และเอา required ออก (ไม่งั้นฟอร์มส่งไม่ได้เพราะช่องที่ซ่อนอยู่ว่าง)
+  document.getElementById("menu-code-field").classList.toggle("hidden", weighed);
+  document.getElementById("menu-code").required = !weighed;
 }
 document.getElementById("menu-category").addEventListener("change", (e) => {
   updateMenuKgFieldVisibility();
@@ -1041,8 +1045,9 @@ document.getElementById("form-add-menu").addEventListener("submit", async (e) =>
   let category = document.getElementById("menu-category").value;
   if (category === "__new__") category = document.getElementById("menu-category-new").value.trim();
   if (!category) return toast("กรุณาเลือกหรือพิมพ์หมวด", true);
-  const codeId = document.getElementById("menu-code").value;
-  if (!codeId) return toast("กรุณาเลือก Code", true);
+  const isWeighedCat = WEIGHED_CATEGORIES.includes(category);
+  const codeId = isWeighedCat ? "" : document.getElementById("menu-code").value;
+  if (!isWeighedCat && !codeId) return toast("กรุณาเลือก Code", true);
   // แต่ละช่องทางเว้นว่างได้ (ราคาไม่คงที่) พนักงานจะกรอกเองตอนขายช่องทางนั้น
   const priceFrontVal = document.getElementById("menu-price-front").value;
   const priceJanuanVal = document.getElementById("menu-price-januan").value;
@@ -1053,7 +1058,7 @@ document.getElementById("form-add-menu").addEventListener("submit", async (e) =>
     name, packaging, category,
     priceFront: priceFrontVal, priceJanuan: priceJanuanVal, priceLineman: priceLinemanVal,
     // หมวดอื่นไม่ใช้ราคาต่อกิโล ส่งค่าว่างเพื่อเคลียร์ค่าเก่า (กรณีย้ายเมนูออกจากหมวดชั่งกิโล)
-    priceKg: FIXED_PACKAGING_CATEGORIES.includes(category) ? document.getElementById("menu-price-kg").value : "",
+    priceKg: WEIGHED_CATEGORIES.includes(category) ? document.getElementById("menu-price-kg").value : "",
     codeId, image: state.menuImageDataUrl || ""
   };
   if (menuId) {
@@ -1117,7 +1122,7 @@ function renderMenusAdminList() {
       ${m.image ? `<img src="${m.image}" alt="">` : `<div class="ph">🍉</div>`}
       <div class="info">
         <div class="title">${m.displayName}</div>
-        <div class="sub">${m.category || "-"} · ${code ? code.name : "(ไม่พบ Code นี้แล้ว)"} · ${priceText}</div>
+        <div class="sub">${m.category || "-"} · ${isWeighedMenu(m) ? "ไม่หักบรรจุภัณฑ์" : (code ? code.name : "(ไม่พบ Code นี้แล้ว)")} · ${priceText}</div>
         <div class="sub ${m.status === "hidden" ? "hidden-badge" : ""}">${m.status === "hidden" ? "ซ่อนอยู่" : "แสดงอยู่ในหน้าขาย"} · ลำดับ ${m.order}</div>
       </div>
       <div class="acts">
@@ -1427,7 +1432,8 @@ document.getElementById("btn-confirm-sale-summary").addEventListener("click", as
   const lowStockAll = new Set();
   const failed = [];
   for (const p of items) {
-    const code = state.codes.find((c) => c.id === p.menu.codeId);
+    // เมนูผลไม้สดชั่งกิโลไม่หักบรรจุภัณฑ์ (ไม่ใช้ Code แม้ในชีตจะยังเหลือค่าเก่าอยู่)
+    const code = isWeighedMenu(p.menu) ? null : state.codes.find((c) => c.id === p.menu.codeId);
     const packaging = code ? code.packaging.map((x) => ({ productId: x.productId, qty: x.qty })) : [];
     const res = await apiPost("stockOut", {
       // สินค้าชั่งกิโล: ต่อหน่วยท้ายชื่อ เช่น "แอปเปิ้ล ฟูจิ (ลูก)" จะได้แยกในสรุป/สถิติ ไม่เอากิโลไปรวมกับลูก
@@ -1438,7 +1444,6 @@ document.getElementById("btn-confirm-sale-summary").addEventListener("click", as
       sellPrice: p.price,
       packaging,
       employee: state.employee.name,
-      fixedPackaging: FIXED_PACKAGING_CATEGORIES.includes(p.menu.category),
     });
     if (res.ok) {
       collapseSaleTile(p.tile);
