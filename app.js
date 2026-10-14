@@ -1416,11 +1416,13 @@ function openSaleSummary() {
 }
 document.getElementById("btn-summary-back").addEventListener("click", () => closeModal("modal-sale-summary"));
 
-// บันทึกทีละรายการเรียงตามลำดับ (รอผลของอันก่อนหน้าก่อนเริ่มอันถัดไป) แทนที่
-// จะยิงพร้อมกันทั้งหมด เพื่อไม่ให้ชนคิวกันเองฝั่งเซิร์ฟเวอร์โดยไม่จำเป็น ถ้า
-// บางรายการบันทึกไม่สำเร็จ (เช่น เน็ตหลุดกลางทาง) รายการที่สำเร็จไปแล้วจะถูก
-// ปิดการ์ดให้เรียบร้อย ส่วนรายการที่พลาดจะโชว์ error ค้างไว้ในการ์ดนั้นให้กด
-// ยืนยันใหม่อีกครั้งได้ ไม่ต้องกรอกใหม่ทั้งหมด
+// บันทึกทุกรายการในคำขอเดียว (stockOutBatch) แทนที่จะส่งทีละรายการ
+// เหตุผล: Google Apps Script ใช้เวลาประมาณ 3-5 วินาทีต่อคำขอ (เปิดชีต อ่านสต๊อก
+// เขียนกลับ) ถ้าส่งทีละรายการ 4 รายการก็ต้องรอ 15-20 วินาที ตอนนี้ส่งครั้งเดียว
+// ให้ฝั่งเซิร์ฟเวอร์ประมวลผลต่อเนื่องในรอบเดียว ไม่ส่งพร้อมกันหลายคำขอ เพราะ
+// เซิร์ฟเวอร์ต้องต่อคิวล็อกอยู่ดี ไม่ได้เร็วขึ้นแถมเปลืองเวลาเริ่มคำขอซ้ำ
+// ถ้าบางรายการไม่ผ่าน (เช่น บรรจุภัณฑ์ไม่พอ) รายการที่ผ่านบันทึกให้แล้ว ส่วนที่พลาด
+// จะโชว์ error ค้างในการ์ดนั้นให้แก้แล้วกดยืนยันใหม่ได้ เหมือนเดิม
 document.getElementById("btn-confirm-sale-summary").addEventListener("click", async () => {
   const items = state.pendingSaleItems;
   if (!items || !items.length) return;
@@ -1428,34 +1430,59 @@ document.getElementById("btn-confirm-sale-summary").addEventListener("click", as
   const backBtn = document.getElementById("btn-summary-back");
   btn.disabled = true;
   backBtn.disabled = true;
+  const originalText = btn.textContent;
+  btn.textContent = "กำลังบันทึก...";
 
-  const lowStockAll = new Set();
-  const failed = [];
-  for (const p of items) {
+  const payloadItems = items.map((p) => {
     // เมนูผลไม้สดชั่งกิโลไม่หักบรรจุภัณฑ์ (ไม่ใช้ Code แม้ในชีตจะยังเหลือค่าเก่าอยู่)
     const code = isWeighedMenu(p.menu) ? null : state.codes.find((c) => c.id === p.menu.codeId);
     const packaging = code ? code.packaging.map((x) => ({ productId: x.productId, qty: x.qty })) : [];
-    const res = await apiPost("stockOut", {
+    return {
       // สินค้าชั่งกิโล: ต่อหน่วยท้ายชื่อ เช่น "แอปเปิ้ล ฟูจิ (ลูก)" จะได้แยกในสรุป/สถิติ ไม่เอากิโลไปรวมกับลูก
       itemName: p.menu.displayName + (p.unit ? ` (${p.unit})` : ""),
       code: code ? code.name : "",
-      channel: state.salesChannel,
       qty: p.qty,
       sellPrice: p.price,
       packaging,
+    };
+  });
+
+  const lowStockAll = new Set();
+  const failed = [];
+  try {
+    const res = await apiPost("stockOutBatch", {
+      channel: state.salesChannel,
+      items: payloadItems,
       employee: state.employee.name,
     });
-    if (res.ok) {
-      collapseSaleTile(p.tile);
-      (res.lowStock || []).forEach((x) => lowStockAll.add(x));
+
+    if (!res || !Array.isArray(res.results)) {
+      // ทั้งคำขอไม่สำเร็จ (เช่น เน็ตหลุด / ระบบคิวไม่ว่าง) ไม่มีรายการไหนถูกบันทึก
+      const msg = (res && res.error) || "บันทึกไม่สำเร็จ";
+      items.forEach((p) => { failed.push({ menu: p.menu, error: msg }); showTileError(p.tile, msg); });
     } else {
-      failed.push({ menu: p.menu, error: res.error || "บันทึกไม่สำเร็จ" });
-      showTileError(p.tile, res.error || "บันทึกไม่สำเร็จ");
+      res.results.forEach((r) => {
+        const p = items[r.index];
+        if (!p) return;
+        if (r.ok) {
+          collapseSaleTile(p.tile);
+          (r.lowStock || []).forEach((x) => lowStockAll.add(x));
+        } else {
+          const msg = r.error || "บันทึกไม่สำเร็จ";
+          failed.push({ menu: p.menu, error: msg });
+          showTileError(p.tile, msg);
+        }
+      });
     }
+  } catch (err) {
+    // เน็ตหลุดกลางทาง: ไม่รู้ว่าเซิร์ฟเวอร์บันทึกไปหรือยัง ให้ตรวจที่หน้าสรุปยอดก่อนกดซ้ำ
+    items.forEach((p) => showTileError(p.tile, "เชื่อมต่อไม่สำเร็จ ตรวจที่สรุปยอดก่อนกดซ้ำ"));
+    failed.push(...items.map((p) => ({ menu: p.menu, error: "เชื่อมต่อไม่สำเร็จ" })));
   }
 
   btn.disabled = false;
   backBtn.disabled = false;
+  btn.textContent = originalText;
   closeModal("modal-sale-summary");
   state.pendingSaleItems = null;
 
