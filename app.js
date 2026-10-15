@@ -16,7 +16,8 @@ const state = {
   menuCategories: [],    // รายชื่อหมวดเมนู (โหลดครั้งเดียวตอนเปิดแอป)
   salesMenus: [],        // เมนูขายเฉพาะที่ "แสดง" — ใช้ในหน้าโหมดขาย
   salesChannel: "",      // ช่องทางที่เลือกไว้ในหน้าโหมดขาย (เลือกครั้งเดียวต่อรอบ)
-  pendingSaleItems: null, // รายการทั้งหมดที่กำลังรอยืนยันใน modal-sale-summary [{tile, menu, qty, price}, ...]
+  cart: [],              // ตะกร้า/บิลที่กำลังเปิดอยู่ในโหมดขาย [{uid, menu, qty, price, unit, error}, ...]
+  cartSaving: false,     // true ระหว่างส่งบันทึก กันกดลบ/กดซ้ำ
   menuImageDataUrl: "",  // รูปที่เลือก/ย่อแล้ว รอบันทึกในฟอร์มเพิ่ม/แก้ไขเมนู
 };
 
@@ -213,7 +214,7 @@ function logout() {
   localStorage.removeItem("2kor_employee");
   state.employee = null;
   state.pin = "";
-  state.pendingSaleItems = null;
+  state.cart = [];
   renderPinDots();
   hideAllScreens();
   document.getElementById("login-screen").classList.remove("hidden");
@@ -538,8 +539,8 @@ function renderLowStockAll() {
 }
 
 // ---- modal: add product ----
-function openModal(id) { document.getElementById(id).classList.remove("hidden"); }
-function closeModal(id) { document.getElementById(id).classList.add("hidden"); }
+function openModal(id) { document.getElementById(id).classList.remove("hidden"); if (id === "modal-sale-summary" && typeof updateCartUI === "function") updateCartUI(); }
+function closeModal(id) { document.getElementById(id).classList.add("hidden"); if (id === "modal-sale-summary" && typeof updateCartUI === "function") updateCartUI(); }
 document.querySelectorAll("[data-close-modal]").forEach(b =>
   b.addEventListener("click", () => closeModal(b.dataset.closeModal))
 );
@@ -1212,6 +1213,10 @@ function updateSalesChannelUI() {
 document.getElementById("sm-channel-options").addEventListener("click", (e) => {
   const btn = e.target.closest(".sm-channel-chip");
   if (!btn) return;
+  if (state.cart.length && btn.dataset.channel !== state.salesChannel) {
+    toast("มีรายการในบิลอยู่ ราคาแต่ละช่องทางไม่เท่ากัน กรุณาชำระเงินหรือลบรายการให้หมดก่อนเปลี่ยนช่องทาง", true);
+    return;
+  }
   state.salesChannel = btn.dataset.channel;
   localStorage.setItem("2kor_sales_channel", state.salesChannel);
   updateSalesChannelUI();
@@ -1245,6 +1250,7 @@ function buildSalesMenuTile(m) {
   const price = getMenuPriceForChannel(m, state.salesChannel);
   const hasPrice = price !== "";
   tile.innerHTML = `
+    <div class="sm-tile-badge" style="display:none"></div>
     <button type="button" class="sm-menu-btn">
       ${m.image ? `<img src="${m.image}" alt="">` : `<div class="ph">🍉</div>`}
       <div class="nm">${m.displayName}</div>
@@ -1257,7 +1263,7 @@ function buildSalesMenuTile(m) {
         <input type="number" class="sm-tile-price" min="0" step="any" placeholder="ราคา/หน่วย" value="${hasPrice ? price : ""}">
       </div>
       <div class="sm-tile-err hidden"></div>
-      <button type="button" class="sm-tile-confirm hidden">ยืนยันการขาย</button>
+      <button type="button" class="sm-tile-confirm hidden">เพิ่มรายการ</button>
     </div>`;
   return tile;
 }
@@ -1285,6 +1291,7 @@ function renderSalesMenuGrid() {
     wrap.appendChild(heading);
     groups[cat].forEach(m => wrap.appendChild(buildSalesMenuTile(m)));
   });
+  refreshTileBadges();
 }
 
 function openSaleTile(tile) {
@@ -1327,7 +1334,7 @@ document.getElementById("sm-menu-grid").addEventListener("click", (e) => {
   if (closeBtn) { collapseSaleTile(closeBtn.closest(".sm-tile")); return; }
 
   const confirmBtn = e.target.closest(".sm-tile-confirm");
-  if (confirmBtn) { openSaleSummary(); return; }
+  if (confirmBtn) { addToCart(confirmBtn.closest(".sm-tile")); return; }
 
   const menuBtn = e.target.closest(".sm-menu-btn");
   if (menuBtn) {
@@ -1355,83 +1362,146 @@ document.getElementById("sm-menu-grid").addEventListener("input", (e) => {
   if (e.target.classList.contains("sm-tile-qty") || e.target.classList.contains("sm-tile-price")) hideTileError(tile);
 });
 
-// รวบรวมทุกการ์ดที่กำลังเปิดอยู่ (ไม่ว่าจะเปิดไว้กี่ใบพร้อมกัน) และกรอกจำนวน
-// ไว้แล้ว มาเป็นรายการเดียวกัน ไม่ใช่แค่ใบที่กด "ยืนยันการขาย" — เพราะพนักงาน
-// มักเปิดหลายใบพร้อมกันตอนลูกค้าซื้อหลายอย่างในบิลเดียว แล้วค่อยมากดยืนยัน
-// รวดเดียวตอนคิดเงิน ใบที่เปิดไว้แต่ยังไม่ได้กรอกจำนวนเลย (แค่เปิดดูเฉยๆ)
-// จะไม่ถูกนับเข้ามา ส่วนใบที่กรอกจำนวนแล้วแต่ลืมใส่ราคา จะโชว์ error ในใบนั้น
-// และ "บล็อก" ไม่ให้เปิดหน้าสรุปจนกว่าจะแก้ไขให้ครบทุกใบก่อน
-function collectPendingSaleItems() {
-  const items = [];
-  let blocked = false;
-  document.querySelectorAll("#sm-menu-grid .sm-tile").forEach((tile) => {
-    const expand = tile.querySelector(".sm-tile-expand");
-    if (expand.classList.contains("hidden")) return; // ยังไม่เปิด ไม่นับ
-    const qty = tile.querySelector(".sm-tile-qty").value;
-    if (!(qty !== "" && Number(qty) > 0)) return; // เปิดดูเฉยๆ ยังไม่กรอกจำนวน ไม่นับ
-    hideTileError(tile);
-    const price = tile.querySelector(".sm-tile-price").value;
-    const menu = state.salesMenus.find((m) => m.id === tile.dataset.menuId);
-    if (!menu) return;
-    if (price === "") {
-      showTileError(tile, "กรุณาใส่ราคา (ใส่ 0 ได้ถ้าแจกฟรี)");
-      blocked = true;
-      return;
-    }
-    const unitSel = tile.querySelector(".sm-tile-unit");
-    items.push({ tile, menu, qty, price, unit: unitSel ? unitSel.value : "" });
-  });
-  return { items, blocked };
+// ============================================================
+// ตะกร้า/บิล (cart) ในโหมดขาย
+// ขั้นตอนใหม่: แตะเมนู -> ใส่จำนวน/หน่วย/ราคา -> "เพิ่มรายการ" (ยังไม่บันทึกลงชีต)
+// กลับมาหน้าเมนูปกติ เลือกเพิ่มได้อีกกี่รายการก็ได้ (เมนูเดิมซ้ำได้ เช่น กิโล + ลูก)
+// พอครบแล้วกดแถบ "ยืนยันการชำระเงิน" ด้านล่างจอ -> เห็นรายการทั้งหมด ลบรายการที่
+// ใส่ผิดได้ แล้วกด "ยืนยันการชำระเงิน" อีกครั้งเพื่อบันทึกทั้งบิลในคำขอเดียว
+// ============================================================
+(function installCartStyles() {
+  const st = document.createElement("style");
+  st.textContent = `
+    .sm-tile{position:relative}
+    .sm-tile-badge{position:absolute;top:8px;right:8px;z-index:2;min-width:26px;height:26px;padding:0 7px;border-radius:13px;background:#2F5233;color:#fff;font-size:13px;font-weight:700;line-height:26px;text-align:center;box-shadow:0 2px 6px rgba(0,0,0,.25)}
+    .cart-bar{position:fixed;left:14px;right:14px;bottom:calc(12px + env(safe-area-inset-bottom,0px));z-index:30}
+    .cart-bar .btn{width:100%;box-shadow:0 6px 18px rgba(0,0,0,.28)}
+    #sales-screen.has-cart .sm-grid{padding-bottom:110px}
+    .cart-del{flex:0 0 auto;margin-left:10px;width:34px;height:34px;border-radius:50%;border:1px solid #d8d2c2;background:#fff;color:#b23a3a;font-size:15px;cursor:pointer;font-family:inherit}
+    .cart-del:disabled{opacity:.4}
+  `;
+  document.head.appendChild(st);
+
+  // ปุ่มบันทึกใน popup เปลี่ยนชื่อเป็น "ยืนยันการชำระเงิน"
+  const ok = document.getElementById("btn-confirm-sale-summary");
+  if (ok) ok.textContent = "ยืนยันการชำระเงิน";
+
+  // แถบตะกร้าลอยท้ายจอ สร้างด้วย JS ไม่ต้องแก้ index.html
+  const screen = document.getElementById("sales-screen");
+  if (screen && !document.getElementById("cart-bar")) {
+    const bar = document.createElement("div");
+    bar.id = "cart-bar"; bar.className = "cart-bar"; bar.style.display = "none";
+    bar.innerHTML = '<button type="button" class="btn mango" id="btn-open-cart"></button>';
+    screen.appendChild(bar);
+    bar.querySelector("button").addEventListener("click", openCartSummary);
+  }
+})();
+
+let cartUid = 0;
+function cartGrandTotal() {
+  return state.cart.reduce((sum, p) => sum + computeSaleTotal(p.qty, p.price, state.salesChannel), 0);
 }
 
-// วาดรายการทั้งหมดในหน้าสรุป (ทีละใบ + ยอดรวมทั้งหมดด้านล่าง)
-function renderSaleSummaryList(items) {
+// อัปเดตแถบท้ายจอ (ซ่อนเมื่อตะกร้าว่าง หรือตอน popup สรุปเปิดอยู่) + ป้ายนับบนการ์ด
+function updateCartUI() {
+  const bar = document.getElementById("cart-bar");
+  const screen = document.getElementById("sales-screen");
+  if (!bar || !screen) return;
+  const modalOpen = !document.getElementById("modal-sale-summary").classList.contains("hidden");
+  const n = state.cart.length;
+  bar.style.display = (n && !modalOpen) ? "" : "none";
+  screen.classList.toggle("has-cart", n > 0);
+  const btn = document.getElementById("btn-open-cart");
+  if (btn) btn.textContent = `ยืนยันการชำระเงิน · ${n} รายการ · ${money(cartGrandTotal())}`;
+  refreshTileBadges();
+}
+
+// ป้ายเลขบนการ์ดเมนู = เมนูนี้ถูกเพิ่มลงบิลแล้วกี่รายการ (ระบบจำให้ว่าเคยคีย์แล้ว)
+function refreshTileBadges() {
+  const counts = {};
+  state.cart.forEach((p) => { counts[p.menu.id] = (counts[p.menu.id] || 0) + 1; });
+  document.querySelectorAll("#sm-menu-grid .sm-tile").forEach((tile) => {
+    const badge = tile.querySelector(".sm-tile-badge");
+    if (!badge) return;
+    const c = counts[tile.dataset.menuId] || 0;
+    badge.style.display = c ? "" : "none";
+    badge.textContent = c ? `✓ ${c}` : "";
+    tile.style.borderColor = c ? "#2F5233" : "";
+  });
+}
+
+// กด "เพิ่มรายการ" บนการ์ด -> ตรวจจำนวน/ราคา -> ใส่ตะกร้า -> ยุบการ์ดกลับ ยังไม่บันทึกลงชีต
+function addToCart(tile) {
+  if (!tile) return;
+  const menu = state.salesMenus.find((m) => m.id === tile.dataset.menuId);
+  if (!menu) return;
+  const qty = tile.querySelector(".sm-tile-qty").value;
+  const price = tile.querySelector(".sm-tile-price").value;
+  hideTileError(tile);
+  if (!(qty !== "" && Number(qty) > 0)) { showTileError(tile, "กรุณาใส่จำนวน"); return; }
+  if (price === "") { showTileError(tile, "กรุณาใส่ราคา (ใส่ 0 ได้ถ้าแจกฟรี)"); return; }
+  const unitSel = tile.querySelector(".sm-tile-unit");
+  state.cart.push({ uid: ++cartUid, menu, qty, price, unit: unitSel ? unitSel.value : "", error: "" });
+  collapseSaleTile(tile);
+  updateCartUI();
+  toast(`เพิ่ม ${menu.displayName} แล้ว`);
+}
+
+// วาดรายการในตะกร้า (ในหน้าสรุป) พร้อมปุ่มลบทีละรายการ + ยอดรวม
+function renderCartSummary() {
   const wrap = document.getElementById("summary-items-list");
-  wrap.innerHTML = items
+  wrap.innerHTML = state.cart
     .map((p) => {
       const total = computeSaleTotal(p.qty, p.price, state.salesChannel);
       return `
       <div class="list-row">
-        <div class="main"><div class="title">${p.menu.displayName}</div><div class="sub">${state.salesChannel} · ${p.qty}${p.unit ? " " + p.unit : ""} x ${money(p.price)}</div></div>
+        <div class="main">
+          <div class="title">${p.menu.displayName}</div>
+          <div class="sub">${state.salesChannel} · ${p.qty}${p.unit ? " " + p.unit : ""} x ${money(p.price)}</div>
+          ${p.error ? `<div class="sm-tile-err">${p.error}</div>` : ""}
+        </div>
         <div class="trail">${money(total)}</div>
+        <button type="button" class="cart-del" data-uid="${p.uid}" title="ลบรายการนี้">✕</button>
       </div>`;
     })
     .join("");
-  const grand = items.reduce((sum, p) => sum + computeSaleTotal(p.qty, p.price, state.salesChannel), 0);
-  document.getElementById("summary-grand-total").textContent = money(grand);
+  document.getElementById("summary-grand-total").textContent = money(cartGrandTotal());
 }
 
-// กด "ยืนยันการขาย" บนการ์ดใบไหนก็ได้ -> รวบรวมทุกใบที่เปิดและกรอกจำนวนไว้
-// แล้วทั้งหมด มาสรุปรวมเป็น popup เดียว ให้ยืนยันอีกครั้งก่อนบันทึกจริง (กัน
-// กดพลาด/เลขผิดตอนรีบๆ) การบันทึกจริงเกิดขึ้นตอนกด "บันทึกการขาย" ใน popup
-// เท่านั้น
-function openSaleSummary() {
-  const { items, blocked } = collectPendingSaleItems();
-  if (blocked) return; // มีบางใบไม่ได้ใส่ราคา ให้แก้ก่อน (โชว์ error ในใบนั้นแล้ว)
-  if (!items.length) return; // ไม่ควรเกิด เพราะปุ่มโผล่เฉพาะตอนกรอกจำนวนในใบนั้นแล้ว
-
-  state.pendingSaleItems = items;
-  renderSaleSummaryList(items);
+function openCartSummary() {
+  if (!state.cart.length) return;
+  renderCartSummary();
   openModal("modal-sale-summary");
 }
+
+// ลบรายการที่เพิ่มผิด — ตะกร้าว่างเมื่อไหร่ popup ปิดเอง
+document.getElementById("summary-items-list").addEventListener("click", (e) => {
+  const del = e.target.closest(".cart-del");
+  if (!del || state.cartSaving) return;
+  state.cart = state.cart.filter((p) => String(p.uid) !== del.dataset.uid);
+  if (!state.cart.length) { closeModal("modal-sale-summary"); return; }
+  renderCartSummary();
+  updateCartUI();
+});
 document.getElementById("btn-summary-back").addEventListener("click", () => closeModal("modal-sale-summary"));
 
-// บันทึกทุกรายการในคำขอเดียว (stockOutBatch) แทนที่จะส่งทีละรายการ
-// เหตุผล: Google Apps Script ใช้เวลาประมาณ 3-5 วินาทีต่อคำขอ (เปิดชีต อ่านสต๊อก
-// เขียนกลับ) ถ้าส่งทีละรายการ 4 รายการก็ต้องรอ 15-20 วินาที ตอนนี้ส่งครั้งเดียว
-// ให้ฝั่งเซิร์ฟเวอร์ประมวลผลต่อเนื่องในรอบเดียว ไม่ส่งพร้อมกันหลายคำขอ เพราะ
-// เซิร์ฟเวอร์ต้องต่อคิวล็อกอยู่ดี ไม่ได้เร็วขึ้นแถมเปลืองเวลาเริ่มคำขอซ้ำ
-// ถ้าบางรายการไม่ผ่าน (เช่น บรรจุภัณฑ์ไม่พอ) รายการที่ผ่านบันทึกให้แล้ว ส่วนที่พลาด
-// จะโชว์ error ค้างในการ์ดนั้นให้แก้แล้วกดยืนยันใหม่ได้ เหมือนเดิม
+// ยืนยันการชำระเงิน = บันทึกทุกรายการในตะกร้าในคำขอเดียว (stockOutBatch)
+// เหตุผล: Google Apps Script ใช้เวลาประมาณ 3-5 วินาทีต่อคำขอ ถ้าส่งทีละรายการ
+// 4 รายการก็ต้องรอ 15-20 วินาที ส่งครั้งเดียวให้เซิร์ฟเวอร์ประมวลผลต่อเนื่องในรอบเดียว
+// ไม่ส่งพร้อมกันหลายคำขอ เพราะเซิร์ฟเวอร์ต้องต่อคิวล็อกอยู่ดี ไม่ได้เร็วขึ้น
+// รายการที่ไม่ผ่าน (เช่น บรรจุภัณฑ์ไม่พอ) จะค้างอยู่ในตะกร้าพร้อมข้อความ error
+// ให้ลบ/แก้แล้วกดยืนยันใหม่ได้ ส่วนรายการที่ผ่านบันทึกแล้วและถูกเอาออกจากตะกร้า
 document.getElementById("btn-confirm-sale-summary").addEventListener("click", async () => {
-  const items = state.pendingSaleItems;
-  if (!items || !items.length) return;
+  if (!state.cart.length || state.cartSaving) return;
+  const items = state.cart.slice(); // snapshot ลำดับตรงกับ index ที่เซิร์ฟเวอร์ตอบกลับ
   const btn = document.getElementById("btn-confirm-sale-summary");
   const backBtn = document.getElementById("btn-summary-back");
+  state.cartSaving = true;
   btn.disabled = true;
   backBtn.disabled = true;
   const originalText = btn.textContent;
   btn.textContent = "กำลังบันทึก...";
+  items.forEach((p) => { p.error = ""; });
 
   const payloadItems = items.map((p) => {
     // เมนูผลไม้สดชั่งกิโลไม่หักบรรจุภัณฑ์ (ไม่ใช้ Code แม้ในชีตจะยังเหลือค่าเก่าอยู่)
@@ -1448,7 +1518,7 @@ document.getElementById("btn-confirm-sale-summary").addEventListener("click", as
   });
 
   const lowStockAll = new Set();
-  const failed = [];
+  const saved = new Set();
   try {
     const res = await apiPost("stockOutBatch", {
       channel: state.salesChannel,
@@ -1457,38 +1527,39 @@ document.getElementById("btn-confirm-sale-summary").addEventListener("click", as
     });
 
     if (!res || !Array.isArray(res.results)) {
-      // ทั้งคำขอไม่สำเร็จ (เช่น เน็ตหลุด / ระบบคิวไม่ว่าง) ไม่มีรายการไหนถูกบันทึก
+      // ทั้งคำขอไม่สำเร็จ (เช่น ระบบคิวไม่ว่าง) ไม่มีรายการไหนถูกบันทึก
       const msg = (res && res.error) || "บันทึกไม่สำเร็จ";
-      items.forEach((p) => { failed.push({ menu: p.menu, error: msg }); showTileError(p.tile, msg); });
+      items.forEach((p) => { p.error = msg; });
     } else {
       res.results.forEach((r) => {
         const p = items[r.index];
         if (!p) return;
         if (r.ok) {
-          collapseSaleTile(p.tile);
+          saved.add(p);
           (r.lowStock || []).forEach((x) => lowStockAll.add(x));
         } else {
-          const msg = r.error || "บันทึกไม่สำเร็จ";
-          failed.push({ menu: p.menu, error: msg });
-          showTileError(p.tile, msg);
+          p.error = r.error || "บันทึกไม่สำเร็จ";
         }
       });
     }
   } catch (err) {
     // เน็ตหลุดกลางทาง: ไม่รู้ว่าเซิร์ฟเวอร์บันทึกไปหรือยัง ให้ตรวจที่หน้าสรุปยอดก่อนกดซ้ำ
-    items.forEach((p) => showTileError(p.tile, "เชื่อมต่อไม่สำเร็จ ตรวจที่สรุปยอดก่อนกดซ้ำ"));
-    failed.push(...items.map((p) => ({ menu: p.menu, error: "เชื่อมต่อไม่สำเร็จ" })));
+    items.forEach((p) => { p.error = "เชื่อมต่อไม่สำเร็จ — ตรวจที่หน้าสรุปยอดก่อนกดซ้ำ กันบันทึกซ้ำ"; });
   }
 
+  state.cart = state.cart.filter((p) => !saved.has(p));
+  state.cartSaving = false;
   btn.disabled = false;
   backBtn.disabled = false;
   btn.textContent = originalText;
-  closeModal("modal-sale-summary");
-  state.pendingSaleItems = null;
 
-  if (failed.length) {
-    toast(`บันทึกไม่สำเร็จ ${failed.length} รายการ (${failed.map((f) => f.menu.displayName).join(", ")}) — รายการที่เหลือบันทึกให้แล้ว แก้ไขแล้วกดยืนยันใหม่ได้`, true);
+  if (state.cart.length) {
+    // ยังมีรายการที่ไม่ผ่าน: เปิด popup ค้างไว้ให้เห็น error ที่แต่ละรายการ
+    renderCartSummary();
+    updateCartUI();
+    toast(`บันทึกไม่สำเร็จ ${state.cart.length} รายการ — ดูข้อความสีแดงใต้ชื่อรายการ ลบหรือแก้แล้วกดยืนยันใหม่ได้`, true);
   } else {
+    closeModal("modal-sale-summary"); // closeModal เรียก updateCartUI ให้เอง
     toast(lowStockAll.size ? `บันทึกแล้ว — บรรจุภัณฑ์ใกล้หมด: ${[...lowStockAll].join(", ")}` : "บันทึกการขายเรียบร้อย");
   }
 });
@@ -2303,10 +2374,10 @@ ${o.method === "นัดส่ง" ? '<div class="sub">* ยังไม่ร�
 }
 
 // ---- พิมพ์ "บิลขาย" จากหน้าสรุปรายการขาย (โหมดขายสินค้า) ----
-// ใช้รายการที่ค้างอยู่ใน state.pendingSaleItems (รายการเดียวกับที่เห็นใน popup)
+// ใช้รายการในตะกร้า state.cart (รายการเดียวกับที่เห็นใน popup)
 // กดพิมพ์ได้ทั้งก่อนและหลังตรวจรายการ ไม่ได้บันทึกขายให้ — การบันทึกยังทำที่ปุ่ม "บันทึกการขาย" เหมือนเดิม
 function printSaleBill() {
-  const items = state.pendingSaleItems;
+  const items = state.cart;
   if (!items || !items.length) return toast("ยังไม่มีรายการให้พิมพ์", true);
   const esc = slipEsc;
   const ch = state.salesChannel || "";
@@ -2316,7 +2387,7 @@ function printSaleBill() {
     const q = Number(p.qty) || 0, pr = Number(p.price) || 0;
     qtyAll += q; gross += roundMoney(q * pr); net += computeSaleTotal(q, pr, ch);
     return `<div class="it"><div class="r"><span>${esc(p.menu.displayName)}</span></div>` +
-      `<div class="r"><span>&nbsp;&nbsp;${money(pr)} x ${q}</span><span>${money(q * pr)}</span></div></div>`;
+      `<div class="r"><span>&nbsp;&nbsp;${money(pr)} x ${q}${p.unit ? " " + p.unit : ""}</span><span>${money(q * pr)}</span></div></div>`;
   }).join("");
   const now = new Date();
   const body = `
