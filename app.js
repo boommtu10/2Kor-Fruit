@@ -1261,6 +1261,7 @@ function buildSalesMenuTile(m) {
         <input type="number" class="sm-tile-qty" min="0.01" step="any" placeholder="จำนวน">
         ${isWeighedMenu(m) ? `<select class="sm-tile-unit">${WEIGHED_UNITS.map(u => `<option value="${u}">${u}</option>`).join("")}</select>` : ""}
         <input type="number" class="sm-tile-price" min="0" step="any" placeholder="ราคา/หน่วย" value="${hasPrice ? price : ""}">
+        <input type="text" class="sm-tile-note" maxlength="60" placeholder="หมายเหตุ / ชื่อลูกค้า (ไม่ใส่ก็ได้)">
       </div>
       <div class="sm-tile-err hidden"></div>
       <button type="button" class="sm-tile-confirm hidden">เพิ่มรายการ</button>
@@ -1308,6 +1309,8 @@ function collapseSaleTile(tile) {
   const menu = state.salesMenus.find(m => m.id === tile.dataset.menuId);
   const price = getMenuPriceForChannel(menu, state.salesChannel);
   tile.querySelector(".sm-tile-qty").value = "";
+  const noteInp = tile.querySelector(".sm-tile-note");
+  if (noteInp) noteInp.value = "";
   const unitSel = tile.querySelector(".sm-tile-unit");
   if (unitSel) unitSel.value = WEIGHED_UNITS[0];
   tile.querySelector(".sm-tile-price").value = price !== "" ? price : "";
@@ -1441,7 +1444,9 @@ function addToCart(tile) {
   if (!(qty !== "" && Number(qty) > 0)) { showTileError(tile, "กรุณาใส่จำนวน"); return; }
   if (price === "") { showTileError(tile, "กรุณาใส่ราคา (ใส่ 0 ได้ถ้าแจกฟรี)"); return; }
   const unitSel = tile.querySelector(".sm-tile-unit");
-  state.cart.push({ uid: ++cartUid, menu, qty, price, unit: unitSel ? unitSel.value : "", error: "" });
+  const noteInp = tile.querySelector(".sm-tile-note");
+  const note = noteInp ? noteInp.value.trim() : "";
+  state.cart.push({ uid: ++cartUid, menu, qty, price, unit: unitSel ? unitSel.value : "", note, error: "" });
   collapseSaleTile(tile);
   updateCartUI();
   toast(`เพิ่ม ${menu.displayName} แล้ว`);
@@ -1458,6 +1463,7 @@ function renderCartSummary() {
         <div class="main">
           <div class="title">${p.menu.displayName}</div>
           <div class="sub">${state.salesChannel} · ${p.qty}${p.unit ? " " + p.unit : ""} x ${money(p.price)}</div>
+          ${p.note ? `<div class="sub">หมายเหตุ: ${slipEsc(p.note)}</div>` : ""}
           ${p.error ? `<div class="sm-tile-err">${p.error}</div>` : ""}
         </div>
         <div class="trail">${money(total)}</div>
@@ -1513,6 +1519,7 @@ document.getElementById("btn-confirm-sale-summary").addEventListener("click", as
       code: code ? code.name : "",
       qty: p.qty,
       sellPrice: p.price,
+      note: p.note || "",
       packaging,
     };
   });
@@ -2387,7 +2394,8 @@ function printSaleBill() {
     const q = Number(p.qty) || 0, pr = Number(p.price) || 0;
     qtyAll += q; gross += roundMoney(q * pr); net += computeSaleTotal(q, pr, ch);
     return `<div class="it"><div class="r"><span>${esc(p.menu.displayName)}</span></div>` +
-      `<div class="r"><span>&nbsp;&nbsp;${money(pr)} x ${q}${p.unit ? " " + p.unit : ""}</span><span>${money(q * pr)}</span></div></div>`;
+      `<div class="r"><span>&nbsp;&nbsp;${money(pr)} x ${q}${p.unit ? " " + p.unit : ""}</span><span>${money(q * pr)}</span></div>` +
+      (p.note ? `<div class="r"><span>&nbsp;&nbsp;(${esc(p.note)})</span></div>` : "") + `</div>`;
   }).join("");
   const now = new Date();
   const body = `
