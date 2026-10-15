@@ -17,6 +17,7 @@ const state = {
   salesMenus: [],        // เมนูขายเฉพาะที่ "แสดง" — ใช้ในหน้าโหมดขาย
   salesChannel: "",      // ช่องทางที่เลือกไว้ในหน้าโหมดขาย (เลือกครั้งเดียวต่อรอบ)
   cart: [],              // ตะกร้า/บิลที่กำลังเปิดอยู่ในโหมดขาย [{uid, menu, qty, price, unit, error}, ...]
+  cartCustomer: "",      // ชื่อลูกค้าของบิลนี้ (ใช้กับทุกรายการในตะกร้า)
   cartSaving: false,     // true ระหว่างส่งบันทึก กันกดลบ/กดซ้ำ
   menuImageDataUrl: "",  // รูปที่เลือก/ย่อแล้ว รอบันทึกในฟอร์มเพิ่ม/แก้ไขเมนู
 };
@@ -215,6 +216,7 @@ function logout() {
   state.employee = null;
   state.pin = "";
   state.cart = [];
+  state.cartCustomer = "";
   renderPinDots();
   hideAllScreens();
   document.getElementById("login-screen").classList.remove("hidden");
@@ -1389,6 +1391,16 @@ document.getElementById("sm-menu-grid").addEventListener("input", (e) => {
   const ok = document.getElementById("btn-confirm-sale-summary");
   if (ok) ok.textContent = "ยืนยันการชำระเงิน";
 
+  // ช่องชื่อลูกค้า "ทั้งบิล" ไว้บนรายการในหน้าสรุป (ไม่บังคับ)
+  const list = document.getElementById("summary-items-list");
+  if (list && !document.getElementById("cart-customer")) {
+    const wrap = document.createElement("div");
+    wrap.style.cssText = "margin:0 0 10px";
+    wrap.innerHTML = '<input type="text" id="cart-customer" maxlength="60" placeholder="ชื่อลูกค้า (ไม่ใส่ก็ได้ — ใช้กับทุกรายการในบิลนี้)" style="width:100%;box-sizing:border-box;padding:10px 12px;border:1.4px solid #d8d2c2;border-radius:10px;font-family:inherit;font-size:14px">';
+    list.parentNode.insertBefore(wrap, list);
+    wrap.querySelector("input").addEventListener("input", (e) => { state.cartCustomer = e.target.value; });
+  }
+
   // แถบตะกร้าลอยท้ายจอ สร้างด้วย JS ไม่ต้องแก้ index.html
   const screen = document.getElementById("sales-screen");
   if (screen && !document.getElementById("cart-bar")) {
@@ -1474,8 +1486,23 @@ function renderCartSummary() {
   document.getElementById("summary-grand-total").textContent = money(cartGrandTotal());
 }
 
+// หมายเหตุที่บันทึกจริงของแต่ละรายการ = ชื่อลูกค้าทั้งบิล + หมายเหตุเฉพาะรายการ (ถ้ามี)
+function cartItemNote(p) {
+  const cust = (state.cartCustomer || "").trim();
+  const own = (p.note || "").trim();
+  if (cust && own && own !== cust) return cust + " · " + own;
+  return cust || own;
+}
+function resetCartCustomer() {
+  state.cartCustomer = "";
+  const inp = document.getElementById("cart-customer");
+  if (inp) inp.value = "";
+}
+
 function openCartSummary() {
   if (!state.cart.length) return;
+  const inp = document.getElementById("cart-customer");
+  if (inp) inp.value = state.cartCustomer || "";
   renderCartSummary();
   openModal("modal-sale-summary");
 }
@@ -1485,7 +1512,7 @@ document.getElementById("summary-items-list").addEventListener("click", (e) => {
   const del = e.target.closest(".cart-del");
   if (!del || state.cartSaving) return;
   state.cart = state.cart.filter((p) => String(p.uid) !== del.dataset.uid);
-  if (!state.cart.length) { closeModal("modal-sale-summary"); return; }
+  if (!state.cart.length) { resetCartCustomer(); closeModal("modal-sale-summary"); return; }
   renderCartSummary();
   updateCartUI();
 });
@@ -1519,7 +1546,7 @@ document.getElementById("btn-confirm-sale-summary").addEventListener("click", as
       code: code ? code.name : "",
       qty: p.qty,
       sellPrice: p.price,
-      note: p.note || "",
+      note: cartItemNote(p),
       packaging,
     };
   });
@@ -1566,6 +1593,7 @@ document.getElementById("btn-confirm-sale-summary").addEventListener("click", as
     updateCartUI();
     toast(`บันทึกไม่สำเร็จ ${state.cart.length} รายการ — ดูข้อความสีแดงใต้ชื่อรายการ ลบหรือแก้แล้วกดยืนยันใหม่ได้`, true);
   } else {
+    resetCartCustomer();
     closeModal("modal-sale-summary"); // closeModal เรียก updateCartUI ให้เอง
     toast(lowStockAll.size ? `บันทึกแล้ว — บรรจุภัณฑ์ใกล้หมด: ${[...lowStockAll].join(", ")}` : "บันทึกการขายเรียบร้อย");
   }
@@ -2402,6 +2430,7 @@ function printSaleBill() {
 <div class="sub">ใบเสร็จรับเงิน</div>
 <hr class="hr2">
 ${ch ? `<div class="c">ช่องทาง: ${esc(ch)}</div><hr class="hr">` : ""}
+${(state.cartCustomer || "").trim() ? `<div class="c">ลูกค้า: ${esc(state.cartCustomer.trim())}</div><hr class="hr">` : ""}
 <div><b>รายการ</b></div>
 ${rows}
 <hr class="hr">
