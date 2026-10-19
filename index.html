@@ -134,6 +134,7 @@
   <div class="sm-topbar">
     <div class="sm-emp" id="sm-emp">—</div>
     <div class="sm-actions">
+      <button class="icon-btn" id="btn-sm-today" title="รายการวันนี้" style="width:auto;padding:0 12px;font-size:13px;font-weight:600;white-space:nowrap">📅 รายการวันนี้</button>
       <button class="icon-btn hidden" id="btn-sm-switch-mode" title="สลับโหมด">🔁</button>
       <button class="icon-btn" id="btn-sm-logout" title="ออกจากระบบ">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v8"/><path d="M18.4 6.6a9 9 0 1 1-12.77 0"/></svg>
@@ -169,6 +170,10 @@
     <nav class="sidebar-nav">
       <button class="side-item active" data-view="dashboard" title="หน้าหลัก">
         <span class="ic">🏠</span><span class="lbl">หน้าหลัก</span>
+      </button>
+
+      <button class="side-item" data-view="today" title="รายการวันนี้">
+        <span class="ic">📅</span><span class="lbl">รายการวันนี้</span>
       </button>
 
       <div class="side-group" id="group-stock">
@@ -254,6 +259,14 @@
           <div class="empty-state">กำลังโหลด…</div>
         </div>
 
+      </section>
+
+      <!-- ---- รายการวันนี้ (หลังบ้าน: ทุกอย่างของวันนี้) ---- -->
+      <section data-view="today" class="hidden">
+        <h2 class="view-title">รายการวันนี้</h2>
+        <div class="hint" id="today-date-label" style="margin:-6px 0 8px"></div>
+        <button class="btn outline" type="button" id="today-refresh-btn" style="margin-bottom:12px">🔄 รีเฟรช</button>
+        <div id="today-body"><div class="empty-state">กำลังโหลด…</div></div>
       </section>
 
       <!-- ---- LOW STOCK: ดูทั้งหมด (จากปุ่ม "ดูทั้งหมด" ในหน้าหลัก เมื่อมีเกิน 10 รายการ) ---- -->
@@ -581,6 +594,16 @@
       </div>
       <button class="btn" type="submit" id="menu-submit-btn" style="margin-top:14px">บันทึกเมนู</button>
     </form>
+  </div>
+</div>
+
+<div class="modal-backdrop hidden" id="modal-today-sales">
+  <div class="modal-sheet">
+    <button class="modal-close" data-close-modal="modal-today-sales">✕</button>
+    <h3>รายการวันนี้</h3>
+    <div class="hint" id="today-sales-date" style="margin:-4px 0 10px"></div>
+    <div id="today-sales-body"><div class="empty-state">กำลังโหลด…</div></div>
+    <button type="button" class="btn outline" id="btn-today-sales-refresh" style="margin-top:12px;width:100%">🔄 รีเฟรช</button>
   </div>
 </div>
 

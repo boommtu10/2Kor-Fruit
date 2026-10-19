@@ -274,6 +274,7 @@ function goToView(name) {
   if (name === "stockcut") { /* selects already filled via fillProductSelects */ }
   if (name === "codes") loadCodes();
   if (name === "menus") loadMenusAdmin();
+  if (name === "today") loadTodayBackoffice();
   if (name === "summary") loadSummary();
   if (name === "stats") loadStats();
   if (name === "employees") loadEmployeesList();
@@ -1817,6 +1818,124 @@ function renderSummaryStockOutList(list) {
     wrap.appendChild(row);
   });
 }
+
+
+// ============================================================
+// รายการวันนี้
+// - หลังบ้าน (admin): ทุกอย่างของวันนี้ — เพิ่มสินค้า/รับเข้า, ตัดสต๊อก, ปรับคงเหลือ,
+//   รายการขาย, ของเสีย, ค่าใช้จ่ายอื่น + ตัวเลขต้นทุน/กำไร
+// - หน้าขาย: เฉพาะรายการขายที่คีย์แล้ว + ยอดขายรวม (ไม่มีต้นทุน/กำไร)
+//   ฝั่งเซิร์ฟเวอร์ส่งข้อมูลต้นทุนมาให้เฉพาะ admin ที่เรียก scope=full เท่านั้น
+// ============================================================
+function fmtTime(v) {
+  const d = new Date(v);
+  return isNaN(d) ? "" : d.toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" });
+}
+function todayDateLabel() {
+  return new Date().toLocaleDateString("th-TH", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+}
+function todaySaleRow(r) {
+  return recordRow({
+    title: r.itemName || "(ไม่ระบุชื่อ)",
+    sub: `${fmtTime(r.date)} · จำนวน ${r.qty} × ${money(r.sellPrice)}${r.channel ? " · " + r.channel : ""}${r.employee ? " · " + r.employee : ""}${r.note ? " · " + r.note : ""}`,
+    amount: money(r.total), amountCls: "pos",
+  });
+}
+function todayCard(parent, label, list, emptyMsg, build) {
+  const lab = document.createElement("div");
+  lab.className = "section-label";
+  lab.style.marginTop = "18px";
+  lab.textContent = `${label} (${list ? list.length : 0})`;
+  parent.appendChild(lab);
+  const card = document.createElement("div");
+  card.className = "card";
+  parent.appendChild(card);
+  if (!list || !list.length) { card.innerHTML = `<div class="empty-state">${emptyMsg}</div>`; return; }
+  list.forEach(x => card.appendChild(build(x)));
+}
+function todayStat(label, value, cls) {
+  return `<div class="stat-card ${cls || ""}"><div class="label">${label}</div><div class="value">${money(value)}</div></div>`;
+}
+
+async function loadTodayBackoffice() {
+  const body = document.getElementById("today-body");
+  document.getElementById("today-date-label").textContent = todayDateLabel();
+  body.innerHTML = '<div class="empty-state">กำลังโหลด…</div>';
+  try {
+    const d = await apiGet("getTodayLog", { scope: "full" });
+    if (d.error) { body.innerHTML = `<div class="empty-state">${slipEsc(d.error)}</div>`; return; }
+    body.innerHTML = "";
+    const stats = document.createElement("div");
+    stats.className = "stat-grid";
+    stats.innerHTML =
+      todayStat("ยอดขายวันนี้", d.totalRevenue) +
+      todayStat("กำไรโดยประมาณ", d.profit, "mango") +
+      todayStat("ซื้อเข้า/รับเข้า", d.totalReceived) +
+      todayStat("ต้นทุนผลไม้ที่ตัด", d.totalRawMaterialCut, "plum") +
+      todayStat("ต้นทุนบรรจุภัณฑ์", d.totalPackagingCost, "plum") +
+      todayStat("ของเสีย", d.totalWaste, "danger") +
+      todayStat("ค่าใช้จ่ายอื่น", d.totalOtherCosts, "danger");
+    body.appendChild(stats);
+
+    todayCard(body, "เพิ่มสินค้า / รับเข้า", d.received, "วันนี้ยังไม่มีการเพิ่มสินค้าหรือรับเข้า", r => recordRow({
+      title: r.productName || "(ไม่ระบุชื่อ)",
+      sub: `${fmtTime(r.date)} · รับเข้า ${r.qty} × ${money(r.unitCost)}${r.note ? " · " + r.note : ""}${r.employee ? " · " + r.employee : ""}`,
+      amount: money(r.total), amountCls: "",
+    }));
+    todayCard(body, "ตัดสต๊อก", d.cuts, "วันนี้ยังไม่มีการตัดสต๊อก", r => recordRow({
+      title: r.productName || "(ไม่ระบุชื่อ)",
+      sub: `${fmtTime(r.date)} · ตัด ${r.qty}${r.note ? " · " + r.note : ""}${r.employee ? " · " + r.employee : ""}`,
+      amount: money(r.cost), amountCls: "neg",
+    }));
+    todayCard(body, "ปรับคงเหลือ", d.adjusts, "วันนี้ยังไม่มีการปรับคงเหลือ", r => recordRow({
+      title: r.productName || "(ไม่ระบุชื่อ)",
+      sub: `${fmtTime(r.date)} · ${r.oldStock} → ${r.newStock}${r.note ? " · " + r.note : ""}${r.employee ? " · " + r.employee : ""}`,
+      amount: (r.diff > 0 ? "+" : "") + r.diff, amountCls: r.diff < 0 ? "neg" : "pos",
+    }));
+    todayCard(body, "รายการขาย", d.sales, "วันนี้ยังไม่มีรายการขาย", todaySaleRow);
+    todayCard(body, "ของเสีย", d.waste, "วันนี้ไม่มีของเสีย", r => recordRow({
+      title: r.productName || "(ไม่ระบุชื่อ)",
+      sub: `${fmtTime(r.date)} · จำนวน ${r.qty}${r.reason ? " · " + r.reason : ""}${r.employee ? " · " + r.employee : ""}`,
+      amount: money(r.cost), amountCls: "neg",
+    }));
+    todayCard(body, "ค่าใช้จ่ายอื่น", d.costs, "วันนี้ไม่มีค่าใช้จ่ายอื่น", r => recordRow({
+      title: r.category || "(ไม่ระบุประเภท)",
+      sub: `${fmtTime(r.date)}${r.description ? " · " + r.description : ""}${r.employee ? " · " + r.employee : ""}`,
+      amount: money(r.amount), amountCls: "neg",
+    }));
+  } catch (err) {
+    body.innerHTML = '<div class="empty-state">โหลดรายการวันนี้ไม่สำเร็จ</div>';
+    toast("โหลดรายการวันนี้ไม่สำเร็จ", true);
+  }
+}
+document.getElementById("today-refresh-btn").addEventListener("click", loadTodayBackoffice);
+
+async function loadTodaySales() {
+  const body = document.getElementById("today-sales-body");
+  document.getElementById("today-sales-date").textContent = todayDateLabel();
+  body.innerHTML = '<div class="empty-state">กำลังโหลด…</div>';
+  try {
+    const d = await apiGet("getTodayLog", { scope: "sales" });
+    if (d.error) { body.innerHTML = `<div class="empty-state">${slipEsc(d.error)}</div>`; return; }
+    body.innerHTML = "";
+    const stats = document.createElement("div");
+    stats.className = "stat-grid";
+    stats.innerHTML = todayStat("ยอดขายวันนี้", d.totalRevenue) +
+      `<div class="stat-card plum"><div class="label">จำนวนรายการ</div><div class="value">${d.countSales || 0}</div></div>`;
+    body.appendChild(stats);
+    const card = document.createElement("div");
+    card.className = "card";
+    card.style.marginTop = "12px";
+    if (!d.sales || !d.sales.length) card.innerHTML = '<div class="empty-state">วันนี้ยังไม่มีรายการขาย</div>';
+    else d.sales.forEach(r => card.appendChild(todaySaleRow(r)));
+    body.appendChild(card);
+  } catch (err) {
+    body.innerHTML = '<div class="empty-state">โหลดรายการวันนี้ไม่สำเร็จ</div>';
+    toast("โหลดรายการวันนี้ไม่สำเร็จ", true);
+  }
+}
+document.getElementById("btn-sm-today").addEventListener("click", () => { openModal("modal-today-sales"); loadTodaySales(); });
+document.getElementById("btn-today-sales-refresh").addEventListener("click", loadTodaySales);
 
 // ============================================================
 // STATS VIEW (สถิติ) — รายการขายดีที่สุดของเดือนที่กำลังดูอยู่
