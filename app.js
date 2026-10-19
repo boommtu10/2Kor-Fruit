@@ -385,16 +385,22 @@ function fillProductSelects() {
 // หน้า "สต๊อกคงเหลือ" — ถ้าสินค้าตัวเดียวกันมีของเหลืออยู่หลายราคาทุนพร้อมกัน
 // (ซื้อเข้าคนละรอบคนละราคา) จะแยกแสดงเป็นคนละแถวตามราคา เช่น
 // "แตงโม ฿18/ลูก" กับ "แตงโม ฿22/ลูก" คนละแถว แทนที่จะรวมเป็นแถวเดียว
-async function renderProductsList() {
+let productsListCache = null; // ผลลัพธ์ล่าสุดของ getProductsWithLots — ใช้ตอนพิมพ์ค้นหา/เปลี่ยนหมวด จะได้ไม่ต้องโหลดใหม่ทุกตัวอักษร
+async function renderProductsList(useCache) {
   const wrap = document.getElementById("products-list");
-  wrap.innerHTML = '<div class="empty-state">กำลังโหลด…</div>';
   let list;
-  try {
-    list = await apiGet("getProductsWithLots");
-    if (list.error) throw new Error(list.error);
-  } catch (err) {
-    wrap.innerHTML = '<div class="empty-state">โหลดข้อมูลไม่สำเร็จ</div>';
-    return;
+  if (useCache === true && productsListCache) {
+    list = productsListCache;
+  } else {
+    wrap.innerHTML = '<div class="empty-state">กำลังโหลด…</div>';
+    try {
+      list = await apiGet("getProductsWithLots");
+      if (list.error) throw new Error(list.error);
+    } catch (err) {
+      wrap.innerHTML = '<div class="empty-state">โหลดข้อมูลไม่สำเร็จ</div>';
+      return;
+    }
+    productsListCache = list;
   }
   if (!list.length) { wrap.innerHTML = '<div class="empty-state">ยังไม่มีสินค้า กด + เพื่อเพิ่มสินค้าแรก</div>'; return; }
 
@@ -404,7 +410,16 @@ async function renderProductsList() {
   // ประวัติการขาย/ตัดสต๊อก/กำไรที่ผ่านมายังคำนวณถูกต้องปกติ เพราะข้อมูลเก่า
   // ยังอยู่ครบในชีต "ตัดสต๊อก"/"ขายออก"/"ของเสีย" ไม่เกี่ยวกับชีต "สินค้า" นี้
   // (ติ๊ก "แสดงสินค้าที่หมดสต๊อกด้วย" เหนือรายการ เพื่อเข้าไปแก้ไข/ลบสินค้าที่หมดแล้วได้)
-  const visibleList = showEmptyStock ? list : list.filter(p => Number(p["สต๊อกปัจจุบัน"]) > 0);
+  // ค้นหา/กรองหมวด: ถ้ามีคำค้น จะรวมสินค้าที่หมดสต๊อกด้วย (ไว้ค้นเจอแล้วกด "รับเข้า" ได้เลย)
+  const q = normProductName((document.getElementById("prod-search") || {}).value);
+  const catFilter = (document.getElementById("prod-filter-cat") || {}).value || "";
+  let visibleList = (showEmptyStock || q) ? list : list.filter(p => Number(p["สต๊อกปัจจุบัน"]) > 0);
+  if (q) visibleList = visibleList.filter(p => normProductName(p["ชื่อสินค้า"]).includes(q));
+  if (catFilter) visibleList = visibleList.filter(p => p["หมวดหมู่"] === catFilter);
+  if ((q || catFilter) && !visibleList.length) {
+    wrap.innerHTML = '<div class="empty-state">ไม่พบสินค้าที่ค้นหา</div>';
+    return;
+  }
 
   if (!visibleList.length) {
     wrap.innerHTML = '<div class="empty-state">ตอนนี้สต๊อกทุกตัวเป็น 0 หมด — กด + เพื่อรับสินค้าล็อตใหม่เข้าได้เลย</div>';
@@ -471,6 +486,40 @@ async function renderProductsList() {
     });
   });
 }
+
+// ---- ปุ่ม "รับเข้า" ในหน้าดูคงเหลือ: กรอกแค่ราคา + จำนวน -> ล็อตใหม่ของสินค้าเดิม ----
+let receiveTarget = null;
+function updateReceiveCpu() {
+  const price = Number(document.getElementById("receive-price").value) || 0;
+  const qty = Number(document.getElementById("receive-qty").value) || 0;
+  document.getElementById("receive-cpu").value = qty > 0 ? money(price / qty) : "—";
+}
+document.getElementById("receive-price").addEventListener("input", updateReceiveCpu);
+document.getElementById("receive-qty").addEventListener("input", updateReceiveCpu);
+function openReceiveModal(p) {
+  receiveTarget = { id: p["รหัสสินค้า"], name: p["ชื่อสินค้า"], unit: p["หน่วยนับ"] };
+  document.getElementById("receive-product-name").textContent = `${p["ชื่อสินค้า"]} (${p["หมวดหมู่"]})`;
+  document.getElementById("receive-old").value = `${Number(p["สต๊อกปัจจุบัน"]) || 0} ${p["หน่วยนับ"] || ""}`;
+  document.getElementById("receive-price").value = "";
+  document.getElementById("receive-qty").value = "";
+  document.getElementById("receive-cpu").value = "—";
+  openModal("modal-receive");
+}
+document.getElementById("form-receive").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  if (!receiveTarget) return;
+  const res = await submitWithLock(e.target, "receiveLot", {
+    productId: receiveTarget.id,
+    price: document.getElementById("receive-price").value,
+    qty: document.getElementById("receive-qty").value,
+    employee: state.employee.name,
+  });
+  if (res.ok) {
+    toast(`รับเข้าล็อตใหม่ของ "${res.name}" แล้ว (คงเหลือ ${res.newStock} ${res.unit})`);
+    closeModal("modal-receive");
+    refreshProducts(); refreshLowStock();
+  } else toast(res.error || "รับเข้าไม่สำเร็จ", true);
+});
 
 // ---- ปรับคงเหลือแบบแมนนวล ----
 // หมายเหตุ: เอาปุ่ม "ปรับคงเหลือ" ออกจากหน้ารายการสต๊อกแล้วตามที่ขอ
@@ -561,6 +610,32 @@ function updateAddProductCostPreview() {
 document.getElementById("np-price").addEventListener("input", updateAddProductCostPreview);
 document.getElementById("np-qty").addEventListener("input", updateAddProductCostPreview);
 
+// พิมพ์ชื่อที่มีอยู่แล้ว (หมวดเดียวกัน — ทุกหมวด) -> แจ้งว่าจะรับเข้าเป็นล็อตใหม่ของสินค้าเดิม (ไม่สร้างสินค้าซ้ำ)
+// ล็อค หน่วยนับ/สต๊อกขั้นต่ำ ให้ตามของเดิม ตรงกับที่เซิร์ฟเวอร์ทำจริง (addProduct ใน Code.gs)
+function normProductName(n) { return String(n || "").toLowerCase().replace(/\s+/g, " ").trim(); }
+function findExistingProduct(name, category) {
+  const key = normProductName(name);
+  if (!key) return null;
+  const rows = (state.products || []).filter(p => p["หมวดหมู่"] === category && normProductName(p["ชื่อสินค้า"]) === key);
+  if (!rows.length) return null;
+  return rows.find(p => Number(p["สต๊อกปัจจุบัน"]) > 0) || rows[rows.length - 1];
+}
+function updateDupHint() {
+  const hint = document.getElementById("np-dup-hint");
+  const unitEl = document.getElementById("np-unit");
+  const minEl = document.getElementById("np-minstock");
+  const ex = findExistingProduct(document.getElementById("np-name").value, document.getElementById("np-category").value);
+  hint.classList.toggle("hidden", !ex);
+  unitEl.readOnly = minEl.readOnly = !!ex;
+  if (ex) {
+    unitEl.value = ex["หน่วยนับ"];
+    minEl.value = ex["สต๊อกขั้นต่ำ"];
+    hint.textContent = `✅ มี "${ex["ชื่อสินค้า"]}" อยู่แล้ว (คงเหลือ ${Number(ex["สต๊อกปัจจุบัน"]) || 0} ${ex["หน่วยนับ"]}) — จะรับเข้าเป็นล็อตใหม่ของสินค้าเดิม ราคาทุนต่างจากเดิมได้ ระบบตัดล็อตเก่าก่อนแล้วต่อล็อตใหม่ให้เอง และ Code/เมนูเดิมใช้ต่อได้เลย`;
+  }
+}
+document.getElementById("np-name").addEventListener("input", updateDupHint);
+document.getElementById("np-category").addEventListener("change", updateDupHint);
+
 document.getElementById("form-add-product").addEventListener("submit", async (e) => {
   e.preventDefault();
   const res = await submitWithLock(e.target, "addProduct", {
@@ -573,9 +648,13 @@ document.getElementById("form-add-product").addEventListener("submit", async (e)
     employee: state.employee.name,
   });
   if (res.ok) {
-    toast("เพิ่มสินค้า + รับเข้าเรียบร้อย");
+    if (res.reused) {
+      toast(`รับเข้าล็อตใหม่ของ "${res.name}" แล้ว (คงเหลือ ${res.newStock} ${res.unit}) — Code/เมนูเดิมใช้ต่อได้เลย` +
+        (res.unitMismatch ? ` · ใช้หน่วย "${res.unit}" ตามของเดิม` : ""));
+    } else toast("เพิ่มสินค้า + รับเข้าเรียบร้อย");
     e.target.reset();
     document.getElementById("np-costperunit").value = "";
+    updateDupHint();
     closeModal("modal-product");
     refreshProducts(); refreshLowStock();
   } else toast(res.error || "เพิ่มสินค้าไม่สำเร็จ", true);
@@ -611,7 +690,7 @@ function renderCutList(rawOnly) {
     nameBox.className = "cut-name";
     nameBox.textContent = p["ชื่อสินค้า"];
     const small = document.createElement("small");
-    small.textContent = `${money(p["ราคาทุนล่าสุด"])}/${unit}`;
+    small.textContent = `ตัดล็อตราคา ${money(p["ราคาทุนล็อตแรก"] != null ? p["ราคาทุนล็อตแรก"] : p["ราคาทุนล่าสุด"])}/${unit}`;
     nameBox.appendChild(small);
     const remain = document.createElement("div");
     remain.className = "cut-remain";
@@ -2848,6 +2927,7 @@ function productActions(p) {
   const id = p["รหัสสินค้า"], name = p["ชื่อสินค้า"], unit = p["หน่วยนับ"];
   const stock = Number(p["สต๊อกปัจจุบัน"]) || 0;
   return actionRow([
+    actBtn("รับเข้า", () => openReceiveModal(p)),
     actBtn("แก้ไข", () => openEditModal({
       title: "แก้ไขสินค้า", hint: id,
       fields: [
@@ -2923,6 +3003,16 @@ document.getElementById("menus-list").addEventListener("click", async (e) => {
     if (res.ok) loadMenusAdmin(); else { toast(res.error || "เลื่อนไม่สำเร็จ", true); mv.disabled = false; }
   }
 });
+
+// ช่องค้นหา + กรองหมวด ในหน้าดูคงเหลือ (กรองจากข้อมูลที่โหลดไว้แล้ว ไม่ยิง API ซ้ำ)
+(function installProductSearch() {
+  const inp = document.getElementById("prod-search");
+  const sel = document.getElementById("prod-filter-cat");
+  if (!inp || !sel) return;
+  let t;
+  inp.addEventListener("input", () => { clearTimeout(t); t = setTimeout(() => renderProductsList(true), 150); });
+  sel.addEventListener("change", () => renderProductsList(true));
+})();
 
 // ---------- ติดตั้งส่วนเสริมบนหน้าที่มีอยู่แล้ว ----------
 (function installEditExtras() {
