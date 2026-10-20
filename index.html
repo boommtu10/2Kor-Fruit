@@ -134,6 +134,7 @@
   <div class="sm-topbar">
     <div class="sm-emp" id="sm-emp">—</div>
     <div class="sm-actions">
+      <button class="icon-btn" id="btn-sm-scan" title="สแกนบาร์โค้ด" style="width:auto;padding:0 12px;font-size:13px;font-weight:600;white-space:nowrap">📷 สแกน</button>
       <button class="icon-btn" id="btn-sm-today" title="รายการวันนี้" style="width:auto;padding:0 12px;font-size:13px;font-weight:600;white-space:nowrap">📅 รายการวันนี้</button>
       <button class="icon-btn hidden" id="btn-sm-switch-mode" title="สลับโหมด">🔁</button>
       <button class="icon-btn" id="btn-sm-logout" title="ออกจากระบบ">
@@ -279,8 +280,9 @@
       <!-- ---- PRODUCTS / ดูคงเหลือ ---- -->
       <section data-view="products" class="hidden">
         <h2 class="view-title">สต๊อกคงเหลือ</h2>
+        <button class="btn mango" type="button" id="btn-scan-receive" style="margin-bottom:10px">📷 สแกนบาร์โค้ดเพื่อรับเข้า</button>
         <div class="field-row" style="margin-bottom:8px">
-          <div class="field" style="flex:2"><input type="search" id="prod-search" placeholder="🔍 ค้นหาชื่อสินค้า…" autocomplete="off"></div>
+          <div class="field" style="flex:2"><input type="search" id="prod-search" placeholder="🔍 ค้นหาชื่อ / บาร์โค้ด…" autocomplete="off"></div>
           <div class="field" style="flex:1">
             <select id="prod-filter-cat">
               <option value="">ทุกหมวด</option>
@@ -472,6 +474,13 @@
     <button class="modal-close" data-close-modal="modal-product">✕</button>
     <h3>เพิ่มสินค้าใหม่</h3>
     <form id="form-add-product">
+      <div class="field">
+        <label>บาร์โค้ด (ไม่บังคับ — สแกนจากกล้อง หรือยิงด้วยเครื่องสแกน)</label>
+        <div style="display:flex;gap:8px">
+          <input type="text" id="np-barcode" inputmode="numeric" autocomplete="off" placeholder="สแกนหรือพิมพ์เลขบาร์โค้ด" style="flex:1;min-width:0">
+          <button type="button" class="btn outline" id="np-barcode-scan" style="width:auto;padding:0 14px;white-space:nowrap">📷 สแกน</button>
+        </div>
+      </div>
       <div class="field"><label>ชื่อสินค้า</label><input type="text" id="np-name" required></div>
       <div class="hint hidden" id="np-dup-hint" style="margin:-6px 0 10px;color:#2F5233;font-weight:600"></div>
       <div class="field">

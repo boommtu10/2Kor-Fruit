@@ -341,6 +341,371 @@ if (!isMobileWidth() && localStorage.getItem("2kor_sidebar_collapsed") === "1") 
 // ============================================================
 // PRODUCTS
 // ============================================================
+// ============================================================
+// สแกนบาร์โค้ด — กล้องโทรศัพท์ (ตอนนี้) + เครื่องยิงบาร์โค้ด USB/Bluetooth (อนาคต)
+// - กล้อง: ใช้ BarcodeDetector ของเบราว์เซอร์ถ้ามี (Chrome/Android) ไม่งั้นใช้ ZXing
+//   (zxing.min.js ในโฟลเดอร์เดียวกับแอป โหลดเมื่อกดสแกนครั้งแรกเท่านั้น)
+// - เครื่องยิง: ส่วนใหญ่ทำตัวเป็นคีย์บอร์ด พิมพ์เลขเร็วๆ แล้วกด Enter ->
+//   ดักด้วย installKeyboardScanner ด้านล่าง ไม่ต้องตั้งค่าอะไรเพิ่ม
+// - เทียบบาร์โค้ดด้วย normBarcode (ตัดช่องว่าง + ตัด 0 นำหน้า) ให้ตรงกับฝั่ง Code.gs
+// ============================================================
+function normBarcode(v) { return String(v === null || v === undefined ? "" : v).replace(/\s+/g, "").replace(/^0+(?=\d)/, ""); }
+
+let zxingPromise = null;
+function loadZXing() {
+  if (window.ZXing) return Promise.resolve(window.ZXing);
+  if (zxingPromise) return zxingPromise;
+  zxingPromise = new Promise((resolve, reject) => {
+    const sc = document.createElement("script");
+    sc.src = "./zxing.min.js";
+    sc.onload = () => (window.ZXing ? resolve(window.ZXing) : reject(new Error("zxing")));
+    sc.onerror = () => { zxingPromise = null; reject(new Error("zxing")); };
+    document.head.appendChild(sc);
+  });
+  return zxingPromise;
+}
+
+const SCAN = { open: false, stop: null };
+
+function scanBeep() {
+  try {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (AC) {
+      SCAN.ctx = SCAN.ctx || new AC();
+      const o = SCAN.ctx.createOscillator(), g = SCAN.ctx.createGain();
+      o.type = "sine"; o.frequency.value = 1100; g.gain.value = 0.15;
+      o.connect(g); g.connect(SCAN.ctx.destination);
+      o.start(); o.stop(SCAN.ctx.currentTime + 0.09);
+    }
+  } catch (e) { /* เสียงไม่ได้ก็ไม่เป็นไร */ }
+  try { if (navigator.vibrate) navigator.vibrate(50); } catch (e) {}
+}
+
+(function installScannerUI() {
+  const st = document.createElement("style");
+  st.textContent = `
+    #scan-overlay{position:fixed;inset:0;z-index:400;background:rgba(0,0,0,.82);display:flex;align-items:center;justify-content:center;padding:14px;box-sizing:border-box}
+    #scan-overlay.hidden{display:none}
+    .scan-box{width:100%;max-width:480px;background:#fff;border-radius:18px;overflow:hidden;display:flex;flex-direction:column}
+    .scan-head{display:flex;align-items:center;justify-content:space-between;padding:12px 14px;background:#2F5233;color:#fff;font-weight:700;font-size:15px}
+    .scan-head button{background:rgba(255,255,255,.18);border:none;color:#fff;width:30px;height:30px;border-radius:50%;font-size:15px;cursor:pointer}
+    .scan-video-wrap{position:relative;background:#000;aspect-ratio:4/3}
+    .scan-video-wrap video{width:100%;height:100%;object-fit:cover;display:block}
+    .scan-frame{position:absolute;left:10%;right:10%;top:30%;bottom:30%;border:3px solid rgba(255,255,255,.9);border-radius:12px;box-shadow:0 0 0 9999px rgba(0,0,0,.28);pointer-events:none}
+    .scan-status{padding:10px 14px;font-size:14px;min-height:20px;color:#332f26;line-height:1.4}
+    .scan-manual{display:flex;gap:8px;padding:0 14px 14px}
+    .scan-manual input{flex:1;min-width:0;padding:10px 12px;border:1.4px solid #d8d2c2;border-radius:10px;font-size:16px;font-family:inherit}
+    .scan-manual button{padding:0 16px;border:none;border-radius:10px;background:#2F5233;color:#fff;font-family:inherit;font-weight:700;font-size:14px;cursor:pointer}
+  `;
+  document.head.appendChild(st);
+  const el = document.createElement("div");
+  el.id = "scan-overlay"; el.className = "hidden";
+  el.innerHTML = `
+    <div class="scan-box">
+      <div class="scan-head"><span id="scan-title">สแกนบาร์โค้ด</span><button type="button" id="scan-close" title="ปิด">✕</button></div>
+      <div class="scan-video-wrap"><video id="scan-video" playsinline muted autoplay></video><div class="scan-frame"></div></div>
+      <div class="scan-status" id="scan-status"></div>
+      <div class="scan-manual">
+        <input type="text" id="scan-manual" inputmode="numeric" autocomplete="off" placeholder="หรือพิมพ์เลขบาร์โค้ดเอง">
+        <button type="button" id="scan-manual-ok">ตกลง</button>
+      </div>
+    </div>`;
+  document.body.appendChild(el);
+  document.getElementById("scan-close").addEventListener("click", () => closeScanner());
+})();
+
+function setScanStatus(msg) { const e = document.getElementById("scan-status"); if (e) e.textContent = msg || ""; }
+
+function closeScanner() {
+  if (!SCAN.open) return;
+  const ov = document.getElementById("scan-overlay");
+  if (ov) ov.classList.add("hidden");
+  if (SCAN.stop) { try { SCAN.stop(); } catch (e) {} SCAN.stop = null; }
+  const v = document.getElementById("scan-video");
+  if (v) { try { v.pause(); } catch (e) {} v.srcObject = null; }
+  SCAN.open = false;
+}
+document.addEventListener("visibilitychange", () => { if (document.hidden && SCAN.open) closeScanner(); });
+
+// opts: { title, continuous (สแกนต่อเนื่องไม่ปิดเอง — ใช้หน้าขาย), onScan(code) -> ข้อความสถานะ (ไม่บังคับ) }
+async function openScanner(opts) {
+  if (SCAN.open) return;
+  SCAN.open = true;
+  const video = document.getElementById("scan-video");
+  document.getElementById("scan-title").textContent = opts.title || "สแกนบาร์โค้ด";
+  document.getElementById("scan-overlay").classList.remove("hidden");
+  setScanStatus("กำลังเปิดกล้อง…");
+  const manual = document.getElementById("scan-manual");
+  manual.value = "";
+
+  let lastCode = "", lastAt = 0, finished = false;
+  const deliver = async (raw) => {
+    const code = String(raw || "").trim();
+    if (!code || finished || !SCAN.open) return;
+    const now = Date.now();
+    if (code === lastCode && now - lastAt < 2000) return; // กล้องเห็นอันเดิมซ้ำๆ ไม่นับซ้ำ
+    lastCode = code; lastAt = now;
+    scanBeep();
+    if (!opts.continuous) { finished = true; closeScanner(); }
+    try {
+      const msg = await opts.onScan(code);
+      if (opts.continuous && SCAN.open) setScanStatus(msg || ("สแกนได้: " + code));
+    } catch (err) { toast((err && err.message) || "จัดการบาร์โค้ดไม่สำเร็จ", true); }
+  };
+
+  // พิมพ์เลขเองได้เสมอ (กล้องใช้ไม่ได้/บาร์โค้ดเลอะอ่านไม่ออก)
+  const manualOk = document.getElementById("scan-manual-ok");
+  const submitManual = () => { const v = manual.value.trim(); manual.value = ""; if (v) { lastCode = ""; deliver(v); } };
+  manualOk.onclick = submitManual;
+  manual.onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); submitManual(); } };
+
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    setScanStatus("เปิดกล้องไม่ได้ (ต้องเปิดแอปผ่าน https) — พิมพ์เลขบาร์โค้ดด้านล่างแทนได้");
+    return;
+  }
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 }, height: { ideal: 720 } },
+      audio: false,
+    });
+  } catch (err) {
+    setScanStatus("เปิดกล้องไม่ได้ — กรุณากดอนุญาตการใช้กล้องในเบราว์เซอร์ หรือพิมพ์เลขบาร์โค้ดด้านล่างแทน");
+    return;
+  }
+  if (!SCAN.open) { stream.getTracks().forEach(t => t.stop()); return; } // ผู้ใช้ปิดไปก่อนกล้องพร้อม
+  video.srcObject = stream;
+  try { await video.play(); } catch (e) {}
+  setScanStatus("เล็งบาร์โค้ดให้อยู่ในกรอบ");
+
+  const stopTracks = () => stream.getTracks().forEach(t => t.stop());
+  let detectorOk = false;
+
+  // ทางที่ 1: BarcodeDetector ในตัวเบราว์เซอร์ (เร็ว ไม่ต้องโหลดไลบรารี)
+  if ("BarcodeDetector" in window) {
+    try {
+      let formats = ["ean_13", "ean_8", "upc_a", "upc_e", "code_128", "code_39", "itf"];
+      if (BarcodeDetector.getSupportedFormats) {
+        const sup = await BarcodeDetector.getSupportedFormats();
+        formats = formats.filter(f => sup.includes(f));
+      }
+      if (formats.length) {
+        const det = new BarcodeDetector({ formats });
+        let alive = true, timer = null;
+        const tick = async () => {
+          if (!alive) return;
+          try {
+            if (video.readyState >= 2) {
+              const found = await det.detect(video);
+              if (found && found.length) await deliver(found[0].rawValue);
+            }
+          } catch (e) { /* เฟรมนี้อ่านไม่ได้ ข้ามไป */ }
+          if (alive) timer = setTimeout(tick, 160);
+        };
+        SCAN.stop = () => { alive = false; clearTimeout(timer); stopTracks(); };
+        tick();
+        detectorOk = true;
+      }
+    } catch (e) { detectorOk = false; }
+  }
+
+  // ทางที่ 2: ZXing (iPhone/Safari และเครื่องที่ไม่มี BarcodeDetector)
+  if (!detectorOk) {
+    try {
+      const Z = await loadZXing();
+      if (!SCAN.open) { stopTracks(); return; }
+      const hints = new Map();
+      hints.set(Z.DecodeHintType.POSSIBLE_FORMATS, [
+        Z.BarcodeFormat.EAN_13, Z.BarcodeFormat.EAN_8, Z.BarcodeFormat.UPC_A, Z.BarcodeFormat.UPC_E,
+        Z.BarcodeFormat.CODE_128, Z.BarcodeFormat.CODE_39, Z.BarcodeFormat.ITF,
+      ]);
+      hints.set(Z.DecodeHintType.TRY_HARDER, true);
+      const reader = new Z.BrowserMultiFormatReader(hints, 250);
+      SCAN.stop = () => { try { reader.reset(); } catch (e) {} stopTracks(); };
+      reader.decodeFromStream(stream, video, (result) => { if (result) deliver(result.getText()); });
+    } catch (err) {
+      stopTracks();
+      setScanStatus("โหลดตัวอ่านบาร์โค้ดไม่สำเร็จ (ต้องมีไฟล์ zxing.min.js และเน็ตตอนเปิดแอปครั้งแรก) — พิมพ์เลขบาร์โค้ดด้านล่างแทนได้");
+    }
+  }
+}
+
+// ---- เครื่องยิงบาร์โค้ด (ทำตัวเป็นคีย์บอร์ด): พิมพ์เลขรัวเร็ว แล้วกด Enter ----
+// ทำงานเมื่อไม่ได้โฟกัสอยู่ในช่องพิมพ์ใดๆ (ถ้าโฟกัสช่องบาร์โค้ด/ค้นหา เลขจะลงช่องนั้นตามปกติ)
+(function installKeyboardScanner() {
+  let buf = "", last = 0;
+  document.addEventListener("keydown", (e) => {
+    if (SCAN.open || e.ctrlKey || e.metaKey || e.altKey) return;
+    const t = e.target, tag = t && t.tagName;
+    if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || (t && t.isContentEditable)) { buf = ""; return; }
+    const now = Date.now();
+    if (now - last > 80) buf = ""; // เครื่องยิงพิมพ์เร็วมาก (ราว 5-30ms/ตัว) คนพิมพ์ช้ากว่านั้น
+    last = now;
+    if (e.key === "Enter") {
+      const code = buf; buf = "";
+      if (code.length >= 4) { e.preventDefault(); handleKeyboardScan(code); }
+      return;
+    }
+    if (e.key && e.key.length === 1) buf += e.key;
+  }, true);
+})();
+
+async function handleKeyboardScan(code) {
+  if (document.querySelector(".modal-backdrop:not(.hidden)")) return; // มี popup เปิดอยู่ ไม่แย่งทำงาน
+  const sales = document.getElementById("sales-screen");
+  if (sales && !sales.classList.contains("hidden")) {
+    const msg = await handleSalesBarcode(code);
+    if (msg) toast(msg);
+    return;
+  }
+  const app = document.getElementById("app");
+  const pv = document.querySelector('section[data-view="products"]');
+  if (app && !app.classList.contains("hidden") && pv && !pv.classList.contains("hidden")) handleReceiveScan(code);
+}
+
+// ---- รับเข้า: สแกนแล้วเจอสินค้าเดิม -> เปิดหน้ารับเข้า / ไม่เจอ -> เปิดฟอร์มเพิ่มสินค้าใหม่พร้อมบาร์โค้ด ----
+function findProductByBarcode(code) {
+  const key = normBarcode(code);
+  if (!key) return null;
+  const rows = (state.products || []).filter(p => normBarcode(p["บาร์โค้ด"]) === key);
+  if (!rows.length) return null;
+  return rows.find(p => Number(p["สต๊อกปัจจุบัน"]) > 0) || rows[rows.length - 1];
+}
+
+async function handleReceiveScan(code) {
+  if (!(state.products || []).length) {
+    try { state.products = await apiGet("getProducts"); } catch (err) { /* ใช้ข้อมูลที่มีอยู่ */ }
+  }
+  const p = findProductByBarcode(code);
+  if (p) {
+    openReceiveModal(p);
+    toast(`พบ "${p["ชื่อสินค้า"]}" — กรอกราคา/จำนวนที่รับเข้า`);
+  } else {
+    document.getElementById("form-add-product").reset();
+    document.getElementById("np-costperunit").value = "";
+    document.getElementById("np-category").value = "อื่นๆ";
+    document.getElementById("np-barcode").value = String(code).trim();
+    updateDupHint();
+    openModal("modal-product");
+    setTimeout(() => document.getElementById("np-name").focus(), 80);
+    toast("ยังไม่มีสินค้านี้ในระบบ — กรอกชื่อและรายละเอียดเพื่อเพิ่มสินค้าใหม่");
+  }
+}
+
+// ช่องบาร์โค้ดในฟอร์มเพิ่มสินค้า: ได้เลขมาแล้ว (สแกน/ยิง/พิมพ์) ถ้าตรงกับสินค้าเดิม ให้ดึงชื่อ/หมวด/หน่วยมาเติมให้
+let npLastBarcode = "";
+function applyNewProductBarcode(code) {
+  const inp = document.getElementById("np-barcode");
+  inp.value = String(code || "").trim();
+  npLastBarcode = inp.value;
+  if (!inp.value) return;
+  const p = findProductByBarcode(inp.value);
+  if (p) {
+    document.getElementById("np-name").value = p["ชื่อสินค้า"];
+    document.getElementById("np-category").value = p["หมวดหมู่"];
+    updateDupHint();
+    toast(`บาร์โค้ดนี้คือ "${p["ชื่อสินค้า"]}" — กรอกราคา/จำนวนเพื่อรับเข้าเป็นล็อตใหม่`);
+    setTimeout(() => document.getElementById("np-price").focus(), 60);
+  } else {
+    setTimeout(() => document.getElementById("np-name").focus(), 60);
+  }
+}
+document.getElementById("np-barcode-scan").addEventListener("click", () =>
+  openScanner({ title: "สแกนบาร์โค้ดสินค้า", onScan: (code) => applyNewProductBarcode(code) })
+);
+document.getElementById("np-barcode").addEventListener("keydown", (e) => {
+  // เครื่องยิงกด Enter ท้ายเลข — กันไม่ให้ฟอร์มถูกส่งทั้งที่ยังกรอกไม่ครบ
+  if (e.key === "Enter") { e.preventDefault(); applyNewProductBarcode(e.target.value); }
+});
+document.getElementById("np-barcode").addEventListener("change", (e) => {
+  const v = e.target.value.trim();
+  if (v && v !== npLastBarcode) applyNewProductBarcode(v); // Enter จากเครื่องยิงทำไปแล้ว ไม่ทำซ้ำตอน blur
+});
+document.getElementById("btn-scan-receive").addEventListener("click", () =>
+  openScanner({ title: "สแกนสินค้าที่จะรับเข้า", onScan: (code) => handleReceiveScan(code) })
+);
+
+// ---- หน้าขาย: สแกนแล้วเพิ่มเมนูที่ผูกกับสินค้านั้นลงบิล (ซ้ำ = เพิ่มจำนวนทีละ 1) ----
+// เมนูผูกบาร์โค้ดผ่าน Code: สินค้าหมวด "อื่นๆ" ที่มีบาร์โค้ด + อยู่ใน Code ของเมนูนั้น (Code.gs: getMenus -> barcodes)
+let lastMenuReloadAt = 0;
+function menusForBarcode(code) {
+  const key = normBarcode(code);
+  return (state.salesMenus || []).filter(m =>
+    !isWeighedMenu(m) && Array.isArray(m.barcodes) && m.barcodes.some(b => normBarcode(b) === key));
+}
+
+async function handleSalesBarcode(code) {
+  if (!state.salesChannel) { toast("กรุณาเลือกช่องทางการจำหน่ายก่อนสแกน", true); return "ยังไม่ได้เลือกช่องทางการจำหน่าย"; }
+  if (state.cartSaving) return "กำลังบันทึกบิล รอสักครู่";
+  let menus = menusForBarcode(code);
+  if (!menus.length && Date.now() - lastMenuReloadAt > 10000) {
+    // อาจเพิ่งผูกบาร์โค้ด/เมนูใหม่หลังเปิดหน้าขาย — โหลดเมนูใหม่ 1 ครั้งแล้วลองอีกที (ไม่ถี่เกิน 10 วิ)
+    lastMenuReloadAt = Date.now();
+    await loadMenusForSales();
+    menus = menusForBarcode(code);
+  }
+  if (!menus.length) {
+    toast(`ไม่พบเมนูขายที่ผูกกับบาร์โค้ด ${code}`, true);
+    return `❌ ไม่พบเมนูของบาร์โค้ด ${code} (สินค้าหมวดอื่นๆ ต้องใส่บาร์โค้ด และผูกใน Code ของเมนู)`;
+  }
+  if (menus.length === 1) return scanAddMenu(menus[0]);
+  chooseMenuForScan(menus);
+  return "บาร์โค้ดนี้มีหลายเมนู — เลือกเมนูที่ต้องการ";
+}
+
+function scanAddMenu(menu) {
+  const price = getMenuPriceForChannel(menu, state.salesChannel);
+  if (price === "") {
+    // ช่องทางนี้ไม่ได้ตั้งราคาตายตัวไว้ -> เปิดการ์ดเมนูให้กรอกราคาเอง (ปิดกล้องก่อนจะได้พิมพ์ได้)
+    closeScanner();
+    const tile = document.querySelector(`.sm-tile[data-menu-id="${menu.id}"]`);
+    if (tile) {
+      openSaleTile(tile);
+      tile.querySelector(".sm-tile-qty").value = "1";
+      updateTileConfirmVisibility(tile);
+      tile.scrollIntoView({ block: "center", behavior: "smooth" });
+      setTimeout(() => tile.querySelector(".sm-tile-price").focus(), 150);
+    }
+    return `${menu.displayName}: ช่องทางนี้ยังไม่มีราคาตายตัว กรุณาใส่ราคา`;
+  }
+  const same = state.cart.find(p => p.menu.id === menu.id && String(p.price) === String(price) && !p.unit && !p.note && !p.error);
+  let qty;
+  if (same) { same.qty = String((Number(same.qty) || 0) + 1); qty = same.qty; }
+  else { state.cart.push({ uid: ++cartUid, menu, qty: "1", price: String(price), unit: "", note: "", error: "" }); qty = "1"; }
+  updateCartUI();
+  return `✅ ${menu.displayName} ×${qty} (${money(price)}) · ในบิล ${state.cart.length} รายการ`;
+}
+
+function chooseMenuForScan(menus) {
+  let back = document.getElementById("modal-scan-choose");
+  if (!back) {
+    back = document.createElement("div");
+    back.className = "modal-backdrop hidden"; back.id = "modal-scan-choose"; back.style.zIndex = "500";
+    back.innerHTML = '<div class="modal-sheet"><button type="button" class="modal-close" id="scan-choose-close">✕</button>' +
+      '<h3>บาร์โค้ดนี้ตรงกับหลายเมนู</h3><div id="scan-choose-list" style="display:flex;flex-direction:column;gap:8px"></div></div>';
+    document.body.appendChild(back);
+    document.getElementById("scan-choose-close").addEventListener("click", () => back.classList.add("hidden"));
+  }
+  const list = document.getElementById("scan-choose-list");
+  list.innerHTML = "";
+  menus.forEach(m => {
+    const b = document.createElement("button");
+    b.type = "button"; b.className = "btn outline"; b.textContent = m.displayName;
+    b.addEventListener("click", () => {
+      back.classList.add("hidden");
+      const msg = scanAddMenu(m);
+      if (SCAN.open) setScanStatus(msg); else toast(msg);
+    });
+    list.appendChild(b);
+  });
+  back.classList.remove("hidden");
+}
+
+document.getElementById("btn-sm-scan").addEventListener("click", () => {
+  if (!state.salesChannel) { toast("กรุณาเลือกช่องทางการจำหน่ายก่อน", true); return; }
+  openScanner({ title: "สแกนสินค้าลงบิล", continuous: true, onScan: (code) => handleSalesBarcode(code) });
+});
+
 async function refreshProducts() {
   try {
     state.products = await apiGet("getProducts");
@@ -414,7 +779,7 @@ async function renderProductsList(useCache) {
   const q = normProductName((document.getElementById("prod-search") || {}).value);
   const catFilter = (document.getElementById("prod-filter-cat") || {}).value || "";
   let visibleList = (showEmptyStock || q) ? list : list.filter(p => Number(p["สต๊อกปัจจุบัน"]) > 0);
-  if (q) visibleList = visibleList.filter(p => normProductName(p["ชื่อสินค้า"]).includes(q));
+  if (q) visibleList = visibleList.filter(p => normProductName(p["ชื่อสินค้า"]).includes(q) || (q.length >= 4 && normProductName(p["บาร์โค้ด"]).includes(q)));
   if (catFilter) visibleList = visibleList.filter(p => p["หมวดหมู่"] === catFilter);
   if ((q || catFilter) && !visibleList.length) {
     wrap.innerHTML = '<div class="empty-state">ไม่พบสินค้าที่ค้นหา</div>';
@@ -444,7 +809,7 @@ async function renderProductsList(useCache) {
         <div class="stock-ring ${low ? "low" : ""}" style="--pct:${pct}"><span>${stock}</span></div>
         <div class="main">
           <div class="title">${p["ชื่อสินค้า"]}</div>
-          <div class="sub">${p["หมวดหมู่"]}</div>
+          <div class="sub">${p["หมวดหมู่"]}${p["บาร์โค้ด"] ? " · ▮ " + slipEsc(p["บาร์โค้ด"]) : ""}</div>
         </div>
         <div class="stock-trail">
           <div class="stock-cost">${money(cost)}</div>
@@ -463,7 +828,7 @@ async function renderProductsList(useCache) {
       <div class="stock-ring ${low ? "low" : ""}" style="--pct:${pct}"><span>${stock}</span></div>
       <div class="main">
         <div class="title">${p["ชื่อสินค้า"]}</div>
-        <div class="sub">${p["หมวดหมู่"]} · มีของเหลือหลายราคาทุน</div>
+        <div class="sub">${p["หมวดหมู่"]}${p["บาร์โค้ด"] ? " · ▮ " + slipEsc(p["บาร์โค้ด"]) : ""} · มีของเหลือหลายราคาทุน</div>
       </div>
     `;
     head.querySelector(".main").appendChild(productActions(p));
@@ -498,12 +863,13 @@ document.getElementById("receive-price").addEventListener("input", updateReceive
 document.getElementById("receive-qty").addEventListener("input", updateReceiveCpu);
 function openReceiveModal(p) {
   receiveTarget = { id: p["รหัสสินค้า"], name: p["ชื่อสินค้า"], unit: p["หน่วยนับ"] };
-  document.getElementById("receive-product-name").textContent = `${p["ชื่อสินค้า"]} (${p["หมวดหมู่"]})`;
+  document.getElementById("receive-product-name").textContent = `${p["ชื่อสินค้า"]} (${p["หมวดหมู่"]})` + (p["บาร์โค้ด"] ? ` · บาร์โค้ด ${p["บาร์โค้ด"]}` : "");
   document.getElementById("receive-old").value = `${Number(p["สต๊อกปัจจุบัน"]) || 0} ${p["หน่วยนับ"] || ""}`;
   document.getElementById("receive-price").value = "";
   document.getElementById("receive-qty").value = "";
   document.getElementById("receive-cpu").value = "—";
   openModal("modal-receive");
+  setTimeout(() => document.getElementById("receive-price").focus(), 80);
 }
 document.getElementById("form-receive").addEventListener("submit", async (e) => {
   e.preventDefault();
@@ -643,6 +1009,7 @@ document.getElementById("form-add-product").addEventListener("submit", async (e)
     category: document.getElementById("np-category").value,
     unit: document.getElementById("np-unit").value,
     minStock: document.getElementById("np-minstock").value,
+    barcode: document.getElementById("np-barcode").value.trim(),
     price: document.getElementById("np-price").value,
     qty: document.getElementById("np-qty").value,
     employee: state.employee.name,
@@ -653,6 +1020,7 @@ document.getElementById("form-add-product").addEventListener("submit", async (e)
         (res.unitMismatch ? ` · ใช้หน่วย "${res.unit}" ตามของเดิม` : ""));
     } else toast("เพิ่มสินค้า + รับเข้าเรียบร้อย");
     e.target.reset();
+    npLastBarcode = "";
     document.getElementById("np-costperunit").value = "";
     updateDupHint();
     closeModal("modal-product");
@@ -2773,7 +3141,17 @@ function openEditModal(spec) {
     }
     if (f.required) inp.required = true;
     inp.dataset.key = f.key;
-    wrap.appendChild(inp);
+    if (f.scan) {
+      // ช่องบาร์โค้ด: ปุ่มสแกนข้างช่อง + กัน Enter จากเครื่องยิงส่งฟอร์มก่อนเวลา
+      const row = document.createElement("div"); row.style.cssText = "display:flex;gap:8px";
+      inp.style.cssText = "flex:1;min-width:0"; inp.inputMode = "numeric"; inp.autocomplete = "off";
+      inp.addEventListener("keydown", (ev) => { if (ev.key === "Enter") ev.preventDefault(); });
+      const sb = document.createElement("button");
+      sb.type = "button"; sb.className = "btn outline"; sb.textContent = "📷 สแกน";
+      sb.style.cssText = "width:auto;padding:0 14px;white-space:nowrap";
+      sb.addEventListener("click", () => openScanner({ title: "สแกนบาร์โค้ดสินค้า", onScan: (code) => { inp.value = String(code).trim(); } }));
+      row.appendChild(inp); row.appendChild(sb); wrap.appendChild(row);
+    } else wrap.appendChild(inp);
     if (f.hint) { const h = document.createElement("div"); h.className = "hint"; h.textContent = f.hint; wrap.appendChild(h); }
     box.appendChild(wrap);
   });
@@ -2935,8 +3313,9 @@ function productActions(p) {
         { key: "category", label: "หมวดหมู่", type: "select", value: p["หมวดหมู่"], options: optList(PRODUCT_CATEGORIES, p["หมวดหมู่"]) },
         { key: "unit", label: "หน่วยนับ", value: unit, required: true },
         { key: "minStock", label: "สต๊อกขั้นต่ำ", type: "number", value: p["สต๊อกขั้นต่ำ"], min: "0", required: true },
+        { key: "barcode", label: "บาร์โค้ด (ไม่บังคับ — เว้นว่าง = ลบบาร์โค้ด)", value: p["บาร์โค้ด"] || "", scan: true, placeholder: "สแกนหรือพิมพ์เลขบาร์โค้ด" },
       ],
-      onSave: v => apiPost("updateProduct", { productId: id, name: v.name, category: v.category, unit: v.unit, minStock: v.minStock }),
+      onSave: v => apiPost("updateProduct", { productId: id, name: v.name, category: v.category, unit: v.unit, minStock: v.minStock, barcode: v.barcode }),
       onDone: () => { refreshProducts(); refreshLowStock(); }, okMsg: "แก้ไขสินค้าแล้ว",
     })),
     actBtn("ปรับจำนวน", () => {
