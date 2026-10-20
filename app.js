@@ -631,7 +631,7 @@ let lastMenuReloadAt = 0;
 function menusForBarcode(code) {
   const key = normBarcode(code);
   return (state.salesMenus || []).filter(m =>
-    !isWeighedMenu(m) && Array.isArray(m.barcodes) && m.barcodes.some(b => normBarcode(b) === key));
+    Array.isArray(m.barcodes) && m.barcodes.some(b => normBarcode(b) === key));
 }
 
 async function handleSalesBarcode(code) {
@@ -646,7 +646,7 @@ async function handleSalesBarcode(code) {
   }
   if (!menus.length) {
     toast(`ไม่พบเมนูขายที่ผูกกับบาร์โค้ด ${code}`, true);
-    return `❌ ไม่พบเมนูของบาร์โค้ด ${code} (สินค้าหมวดอื่นๆ ต้องใส่บาร์โค้ด และผูกใน Code ของเมนู)`;
+    return `❌ ไม่พบเมนูของบาร์โค้ด ${code} — ให้ผู้ดูแลใส่บาร์โค้ดที่ปุ่ม "แก้ไข" ของเมนูในหน้าจัดการเมนูขาย`;
   }
   if (menus.length === 1) return scanAddMenu(menus[0]);
   chooseMenuForScan(menus);
@@ -655,8 +655,8 @@ async function handleSalesBarcode(code) {
 
 function scanAddMenu(menu) {
   const price = getMenuPriceForChannel(menu, state.salesChannel);
-  if (price === "") {
-    // ช่องทางนี้ไม่ได้ตั้งราคาตายตัวไว้ -> เปิดการ์ดเมนูให้กรอกราคาเอง (ปิดกล้องก่อนจะได้พิมพ์ได้)
+  if (price === "" || isWeighedMenu(menu)) {
+    // ราคาไม่ตายตัวในช่องทางนี้ หรือเป็นผลไม้ชั่งกิโล (ต้องเลือกหน่วยลูก/กิโล) -> เปิดการ์ดเมนูให้กรอกเอง (ปิดกล้องก่อนจะได้พิมพ์ได้)
     closeScanner();
     const tile = document.querySelector(`.sm-tile[data-menu-id="${menu.id}"]`);
     if (tile) {
@@ -666,7 +666,7 @@ function scanAddMenu(menu) {
       tile.scrollIntoView({ block: "center", behavior: "smooth" });
       setTimeout(() => tile.querySelector(".sm-tile-price").focus(), 150);
     }
-    return `${menu.displayName}: ช่องทางนี้ยังไม่มีราคาตายตัว กรุณาใส่ราคา`;
+    return `${menu.displayName}: ${isWeighedMenu(menu) ? "เลือกหน่วยและใส่จำนวน/ราคา" : "ช่องทางนี้ยังไม่มีราคาตายตัว กรุณาใส่ราคา"}`;
   }
   const same = state.cart.find(p => p.menu.id === menu.id && String(p.price) === String(price) && !p.unit && !p.note && !p.error);
   let qty;
@@ -1471,6 +1471,7 @@ function openMenuModal(menu) {
   document.getElementById("menu-price-front").value = (menu && menu.priceFront !== "" && menu.priceFront !== undefined) ? menu.priceFront : "";
   document.getElementById("menu-price-januan").value = (menu && menu.priceJanuan !== "" && menu.priceJanuan !== undefined) ? menu.priceJanuan : "";
   document.getElementById("menu-price-lineman").value = (menu && menu.priceLineman !== "" && menu.priceLineman !== undefined) ? menu.priceLineman : "";
+  document.getElementById("menu-barcode").value = menu ? (menu.barcode || "") : "";
   document.getElementById("menu-price-kg").value = (menu && menu.priceKg !== "" && menu.priceKg !== undefined && menu.priceKg !== null) ? menu.priceKg : "";
   document.getElementById("menu-order").value = menu ? menu.order : "";
   document.getElementById("menu-order-field").classList.toggle("hidden", !menu);
@@ -1482,6 +1483,12 @@ function openMenuModal(menu) {
   setMenuImagePreview(menu ? menu.image : "");
   openModal("modal-menu");
 }
+document.getElementById("menu-barcode-scan").addEventListener("click", () =>
+  openScanner({ title: "สแกนบาร์โค้ดของเมนูนี้", onScan: (code) => { document.getElementById("menu-barcode").value = String(code).trim(); } })
+);
+document.getElementById("menu-barcode").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") e.preventDefault(); // เครื่องยิงกด Enter ท้ายเลข ไม่ให้ฟอร์มถูกส่งก่อนกรอกครบ
+});
 document.getElementById("btn-add-menu").addEventListener("click", () => {
   if (!state.codes.length) { toast('ยังไม่มี Code — ไปสร้างที่ "จัดการ Code" ก่อน', true); return; }
   openMenuModal(null);
@@ -1510,7 +1517,8 @@ document.getElementById("form-add-menu").addEventListener("submit", async (e) =>
     priceFront: priceFrontVal, priceJanuan: priceJanuanVal, priceLineman: priceLinemanVal,
     // หมวดอื่นไม่ใช้ราคาต่อกิโล ส่งค่าว่างเพื่อเคลียร์ค่าเก่า (กรณีย้ายเมนูออกจากหมวดชั่งกิโล)
     priceKg: WEIGHED_CATEGORIES.includes(category) ? document.getElementById("menu-price-kg").value : "",
-    codeId, image: state.menuImageDataUrl || ""
+    codeId, image: state.menuImageDataUrl || "",
+    barcode: document.getElementById("menu-barcode").value.trim() // ว่าง = ลบบาร์โค้ดของเมนูนี้
   };
   if (menuId) {
     payload.menuId = menuId;
@@ -1573,7 +1581,7 @@ function renderMenusAdminList() {
       ${m.image ? `<img src="${m.image}" alt="">` : `<div class="ph">🍉</div>`}
       <div class="info">
         <div class="title">${m.displayName}</div>
-        <div class="sub">${m.category || "-"} · ${isWeighedMenu(m) ? "ไม่หักบรรจุภัณฑ์" : (code ? code.name : "(ไม่พบ Code นี้แล้ว)")} · ${priceText}</div>
+        <div class="sub">${m.barcode ? "▮ " + slipEsc(m.barcode) + " · " : ""}${m.category || "-"} · ${isWeighedMenu(m) ? "ไม่หักบรรจุภัณฑ์" : (code ? code.name : "(ไม่พบ Code นี้แล้ว)")} · ${priceText}</div>
         <div class="sub ${m.status === "hidden" ? "hidden-badge" : ""}">${m.status === "hidden" ? "ซ่อนอยู่" : "แสดงอยู่ในหน้าขาย"} · ลำดับ ${m.order}</div>
       </div>
       <div class="acts">
