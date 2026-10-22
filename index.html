@@ -508,6 +508,11 @@
         <div class="field"><label>ราคา (ราคาที่ซื้อ)</label><input type="number" id="np-price" min="0" step="any" required></div>
         <div class="field"><label>จำนวน</label><input type="number" id="np-qty" min="0.01" step="any" required></div>
       </div>
+      <div class="field hidden" id="np-sell-wrap">
+        <label>ราคาขายหน้าบ้าน/ชิ้น (ไม่บังคับ — เว้นว่างได้ แล้วค่อยกรอกตอนขาย)</label>
+        <input type="number" id="np-sellprice" min="0" step="any" placeholder="เช่น 10">
+        <div class="hint">สินค้าหมวดอื่นๆ ระบบจะสร้าง Code และปุ่มเมนูขาย (หมวดขนม) ให้อัตโนมัติ ไม่ต้องไปสร้างและผูกเอง</div>
+      </div>
       <div class="field"><label>ราคาทุน/หน่วย (คำนวณอัตโนมัติ)</label><input type="text" id="np-costperunit" disabled></div>
       <div class="hint">สูตร: ราคา ÷ จำนวน = ราคาทุน/หน่วย — จำนวนที่กรอกตรงนี้คือสต๊อกที่รับเข้าครั้งแรกของสินค้านี้เลย ไม่ต้องไปบันทึกรับเข้าซ้ำที่ไหนอีก</div>
       <button class="btn" type="submit">บันทึกสินค้า</button>

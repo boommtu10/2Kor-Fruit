@@ -993,6 +993,9 @@ function updateDupHint() {
   const ex = findExistingProduct(document.getElementById("np-name").value, document.getElementById("np-category").value);
   hint.classList.toggle("hidden", !ex);
   unitEl.readOnly = minEl.readOnly = !!ex;
+  // ช่องราคาขาย โชว์เฉพาะสินค้าใหม่หมวดอื่นๆ (ถ้าเป็นสินค้าเดิมที่รับเข้าล็อตใหม่ มี Code/เมนูอยู่แล้ว ไม่ต้องกรอก)
+  const cat = document.getElementById("np-category").value;
+  document.getElementById("np-sell-wrap").classList.toggle("hidden", !(cat === "อื่นๆ" && !ex));
   if (ex) {
     unitEl.value = ex["หน่วยนับ"];
     minEl.value = ex["สต๊อกขั้นต่ำ"];
@@ -1012,13 +1015,18 @@ document.getElementById("form-add-product").addEventListener("submit", async (e)
     barcode: document.getElementById("np-barcode").value.trim(),
     price: document.getElementById("np-price").value,
     qty: document.getElementById("np-qty").value,
+    sellPrice: document.getElementById("np-sellprice").value,
     employee: state.employee.name,
   });
   if (res.ok) {
     if (res.reused) {
       toast(`รับเข้าล็อตใหม่ของ "${res.name}" แล้ว (คงเหลือ ${res.newStock} ${res.unit}) — Code/เมนูเดิมใช้ต่อได้เลย` +
         (res.unitMismatch ? ` · ใช้หน่วย "${res.unit}" ตามของเดิม` : ""));
+    } else if (res.auto && res.auto.menuCreated) {
+      toast(`เพิ่มสินค้า + รับเข้าแล้ว และสร้าง Code + ปุ่มเมนูขาย (หมวดขนม) ให้อัตโนมัติ`);
     } else toast("เพิ่มสินค้า + รับเข้าเรียบร้อย");
+    // ถ้าสร้าง Code/เมนูไม่ครบ ให้แจ้งเหตุผลแยกอีกอัน (ไม่ทับข้อความด้านบน)
+    if (res.auto && res.auto.warning) setTimeout(() => toast(res.auto.warning, true), 2800);
     e.target.reset();
     npLastBarcode = "";
     document.getElementById("np-costperunit").value = "";
