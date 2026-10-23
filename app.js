@@ -2211,6 +2211,7 @@ async function loadSummary() {
     document.getElementById("sum-raw").textContent = money(sum.totalRawMaterialIn);
     document.getElementById("sum-packcost").textContent = money(sum.totalPackagingCost);
     document.getElementById("sum-othergoods").textContent = money(sum.totalOtherGoodsCost);
+    document.getElementById("sum-totalcost").textContent = money(sum.totalRawMaterialCut + sum.totalPackagingCost + sum.totalOtherGoodsCost);
     document.getElementById("sum-waste").textContent = money(sum.totalWaste);
     document.getElementById("sum-costs").textContent = money(sum.totalOtherCosts);
     document.getElementById("sum-in").textContent = money(sum.totalStockIn);
@@ -2239,6 +2240,7 @@ document.getElementById("summary-export-btn").addEventListener("click", () => {
     ["ต้นทุนผลไม้ที่ตัดใช้จริง", sum.totalRawMaterialCut],
     ["ต้นทุนบรรจุภัณฑ์ที่ใช้จริง", sum.totalPackagingCost],
     ["ต้นทุนสินค้าหมวดอื่นๆ (ขนม นม น้ำ)", sum.totalOtherGoodsCost],
+    ["รวมต้นทุนทั้งหมด (ผลไม้+บรรจุภัณฑ์+สินค้าอื่นๆ)", sum.totalRawMaterialCut + sum.totalPackagingCost + sum.totalOtherGoodsCost],
     ["มูลค่าของเสีย", sum.totalWaste],
     ["ค่าใช้จ่ายอื่น", sum.totalOtherCosts],
     ["กำไรโดยประมาณ", sum.profit],
@@ -2339,6 +2341,7 @@ async function loadTodayBackoffice() {
       todayStat("ต้นทุนผลไม้ที่ตัด", d.totalRawMaterialCut, "plum") +
       todayStat("ต้นทุนบรรจุภัณฑ์", d.totalPackagingCost, "plum") +
       todayStat("ต้นทุนสินค้าหมวดอื่นๆ (ขนม นม น้ำ)", d.totalOtherGoodsCost, "plum") +
+      todayStat("รวมต้นทุนทั้งหมด (ผลไม้+บรรจุภัณฑ์+สินค้าอื่นๆ)", d.totalRawMaterialCut + d.totalPackagingCost + d.totalOtherGoodsCost, "mango") +
       todayStat("ของเสีย", d.totalWaste, "danger") +
       todayStat("ค่าใช้จ่ายอื่น", d.totalOtherCosts, "danger");
     body.appendChild(stats);
@@ -3046,6 +3049,7 @@ ${r("ยอดขาย", sum.totalRevenue)}
 ${r("ต้นทุนผลไม้ที่ตัดใช้จริง", -sum.totalRawMaterialCut)}
 ${r("ต้นทุนบรรจุภัณฑ์ที่ใช้", -sum.totalPackagingCost)}
 ${r("ต้นทุนสินค้าหมวดอื่นๆ", -sum.totalOtherGoodsCost)}
+${r("(รวมต้นทุนทั้งหมด)", -(sum.totalRawMaterialCut + sum.totalPackagingCost + sum.totalOtherGoodsCost))}
 ${r("มูลค่าของเสีย", -sum.totalWaste)}
 ${r("ค่าใช้จ่ายอื่น", -sum.totalOtherCosts)}
 <hr class="hr">
