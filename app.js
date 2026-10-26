@@ -2281,34 +2281,47 @@ function dashMonthList(n) {
   }
   return out;
 }
-// กราฟแท่งกำไรรายเดือน (SVG วาดเอง ไม่ใช้ไลบรารี) เดือนล่าสุดสีเข้ม เดือนก่อนหน้าสีอ่อน กำไรติดลบเป็นสีแดง
+// กราฟแท่งรายเดือน (SVG วาดเอง ไม่ใช้ไลบรารี) แต่ละเดือนมี 2 แท่งคู่กัน: รายได้ทั้งหมด (ส้ม) + กำไร (เขียว)
+// เดือนล่าสุดสีเข้ม เดือนก่อนหน้าสีอ่อน กำไรติดลบเป็นสีแดง
 function renderProfitChart(wrap, months) {
-  const okVals = months.filter(m => m.ok).map(m => m.profit);
-  if (!okVals.length) { wrap.innerHTML = '<div class="empty-state">โหลดกราฟกำไรไม่สำเร็จ ลองกลับมาที่หน้าหลักอีกครั้ง</div>'; return; }
+  const okMonths = months.filter(m => m.ok);
+  if (!okMonths.length) { wrap.innerHTML = '<div class="empty-state">โหลดกราฟกำไรไม่สำเร็จ ลองกลับมาที่หน้าหลักอีกครั้ง</div>'; return; }
+  const allVals = [];
+  okMonths.forEach(m => { allVals.push(m.profit, m.revenue); });
   const W = 640, H = 250, top = 30, bottom = 36, side = 10;
-  const maxV = Math.max(0, ...okVals), minV = Math.min(0, ...okVals);
+  const maxV = Math.max(0, ...allVals), minV = Math.min(0, ...allVals);
   const range = (maxV - minV) || 1;
   const plotH = H - top - bottom;
   const y = v => top + (maxV - v) / range * plotH;
   const y0 = y(0);
   const slot = (W - side * 2) / months.length;
-  const bw = Math.min(54, slot * 0.56);
+  const bw = Math.min(34, slot * 0.36), gap = 4;
   let g = `<line x1="${side}" x2="${W - side}" y1="${y0}" y2="${y0}" stroke="#d8d2c2" stroke-dasharray="4 4"/>`;
+  // วาด 1 แท่ง + ตัวเลขบนแท่ง
+  const bar = (cx, v, fill, txtColor, tip) => {
+    const h = Math.max(2, Math.abs(y(v) - y0));
+    const yTop = v >= 0 ? y0 - h : y0;
+    let out = `<rect x="${(cx - bw / 2).toFixed(1)}" y="${yTop.toFixed(1)}" width="${bw.toFixed(1)}" height="${h.toFixed(1)}" rx="5" fill="${fill}"><title>${tip}</title></rect>`;
+    const ly = v >= 0 ? yTop - 6 : yTop + h + 13;
+    out += `<text x="${cx.toFixed(1)}" y="${ly.toFixed(1)}" text-anchor="middle" font-size="11" font-weight="700" fill="${txtColor}" style="font-family:inherit">${dashCompact(v)}</text>`;
+    return out;
+  };
   months.forEach((m, i) => {
     const cx = side + slot * i + slot / 2;
     const cur = i === months.length - 1;
     if (m.ok) {
-      const h = Math.max(2, Math.abs(y(m.profit) - y0));
-      const yTop = m.profit >= 0 ? y0 - h : y0;
-      const fill = m.profit >= 0 ? (cur ? "#2F5233" : "#9CC3A4") : (cur ? "#C0392B" : "#E3A8A0");
-      g += `<rect x="${(cx - bw / 2).toFixed(1)}" y="${yTop.toFixed(1)}" width="${bw.toFixed(1)}" height="${h.toFixed(1)}" rx="6" fill="${fill}"><title>${m.label}: กำไร ${money(m.profit)} (ยอดขาย ${money(m.revenue)})</title></rect>`;
-      const ly = m.profit >= 0 ? yTop - 7 : yTop + h + 14;
-      g += `<text x="${cx.toFixed(1)}" y="${ly.toFixed(1)}" text-anchor="middle" font-size="12.5" font-weight="700" fill="${m.profit >= 0 ? "#2b2a24" : "#C0392B"}" style="font-family:inherit">${dashCompact(m.profit)}</text>`;
+      const cxRev = cx - bw / 2 - gap / 2, cxProf = cx + bw / 2 + gap / 2;
+      g += bar(cxRev, m.revenue, cur ? "#D98A1F" : "#F2CE96", "#8a5a12", `${m.label}: รายได้ทั้งหมด ${money(m.revenue)}`);
+      const pf = m.profit >= 0 ? (cur ? "#2F5233" : "#9CC3A4") : (cur ? "#C0392B" : "#E3A8A0");
+      g += bar(cxProf, m.profit, pf, m.profit >= 0 ? "#2b2a24" : "#C0392B", `${m.label}: กำไร ${money(m.profit)} (รายได้ทั้งหมด ${money(m.revenue)})`);
     } else {
       g += `<text x="${cx.toFixed(1)}" y="${(y0 - 7).toFixed(1)}" text-anchor="middle" font-size="12.5" fill="#9a9486" style="font-family:inherit">—</text>`;
     }
     g += `<text x="${cx.toFixed(1)}" y="${H - 12}" text-anchor="middle" font-size="12.5" font-weight="${cur ? 700 : 500}" fill="${cur ? "#2F5233" : "#7a7566"}" style="font-family:inherit">${m.label}</text>`;
   });
+  const legend = '<div style="display:flex;gap:14px;font-size:12px;color:#7a7566;margin-bottom:4px">' +
+    '<span><i style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#D98A1F;margin-right:5px"></i>รายได้ทั้งหมด</span>' +
+    '<span><i style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#2F5233;margin-right:5px"></i>กำไร</span></div>';
 
   // สรุปเหนือกราฟ: กำไรเดือนนี้ + เทียบเดือนก่อน + ยอดขายเดือนนี้
   const cur = months[months.length - 1], prev = months[months.length - 2];
@@ -2323,7 +2336,7 @@ function renderProfitChart(wrap, months) {
     kpis += `<div class="dash-kpi"><div class="t">ยอดขายเดือนนี้</div><div class="v">${slipEsc(money(cur.revenue))}</div></div>`;
   }
   kpis += "</div>";
-  wrap.innerHTML = kpis + `<div class="dash-chart"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="กราฟกำไรรายเดือน">${g}</svg></div>`;
+  wrap.innerHTML = kpis + legend + `<div class="dash-chart"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="กราฟรายได้และกำไรรายเดือน">${g}</svg></div>`;
 }
 // โหลดกำไรรายเดือนด้วย getSummary แบบ "month" (สูตรกำไรเดียวกับหน้าสรุปยอดเป๊ะ) ยิงขนานทุกเดือน
 // เดือนที่ผ่านมาแล้วจำไว้ 10 นาที เดือนปัจจุบันโหลดใหม่ทุกครั้ง ถ้ามีข้อมูลเก่าให้โชว์ก่อนแล้วค่อยอัปเดต
