@@ -1514,7 +1514,11 @@ function openMenuModal(menu) {
   document.getElementById("menu-price-januan").value = (menu && menu.priceJanuan !== "" && menu.priceJanuan !== undefined) ? menu.priceJanuan : "";
   document.getElementById("menu-price-lineman").value = (menu && menu.priceLineman !== "" && menu.priceLineman !== undefined) ? menu.priceLineman : "";
   document.getElementById("menu-price-ning").value = (menu && menu.priceNing !== "" && menu.priceNing !== undefined && menu.priceNing !== null) ? menu.priceNing : "";
-  document.getElementById("menu-barcode").value = menu ? (menu.barcode || "") : "";
+  // บาร์โค้ดของเมนูมีได้หลายตัว (barcodeList จากเซิร์ฟเวอร์ หรือแยกจาก menu.barcode ที่คั่นด้วย ",")
+  state.menuBarcodes = [];
+  document.getElementById("menu-barcode").value = "";
+  if (menu) addMenuBarcode(Array.isArray(menu.barcodeList) ? menu.barcodeList.join(",") : (menu.barcode || ""));
+  renderMenuBarcodeChips();
   document.getElementById("menu-price-kg").value = (menu && menu.priceKg !== "" && menu.priceKg !== undefined && menu.priceKg !== null) ? menu.priceKg : "";
   document.getElementById("menu-order").value = menu ? menu.order : "";
   document.getElementById("menu-order-field").classList.toggle("hidden", !menu);
@@ -1526,11 +1530,54 @@ function openMenuModal(menu) {
   setMenuImagePreview(menu ? menu.image : "");
   openModal("modal-menu");
 }
+// ---- บาร์โค้ดหลายตัวต่อ 1 เมนู: โชว์เป็นแท็กพร้อมปุ่มลบ เพิ่มจากช่องพิมพ์/เครื่องยิง/กล้อง ----
+function renderMenuBarcodeChips() {
+  const wrap = document.getElementById("menu-barcode-chips");
+  wrap.innerHTML = "";
+  const list = state.menuBarcodes || [];
+  wrap.style.display = list.length ? "flex" : "none";
+  list.forEach((b, i) => {
+    const chip = document.createElement("span");
+    chip.className = "bc-chip";
+    chip.appendChild(document.createTextNode("▮ " + b));
+    const x = document.createElement("button");
+    x.type = "button"; x.textContent = "✕"; x.title = "เอาบาร์โค้ดนี้ออก";
+    x.addEventListener("click", () => { state.menuBarcodes.splice(i, 1); renderMenuBarcodeChips(); });
+    chip.appendChild(x);
+    wrap.appendChild(chip);
+  });
+}
+// เพิ่มบาร์โค้ด 1 ตัวหรือหลายตัว (คั่นด้วย , หรือเว้นวรรค) ตัวที่มีอยู่แล้วไม่เพิ่มซ้ำ คืนจำนวนที่เพิ่มได้/ซ้ำ
+function addMenuBarcode(raw) {
+  if (!Array.isArray(state.menuBarcodes)) state.menuBarcodes = [];
+  let added = 0, dup = 0;
+  String(raw || "").split(/[,;\s]+/).map(s => s.trim()).filter(Boolean).forEach(p => {
+    const k = normBarcode(p);
+    if (!k) return;
+    if (state.menuBarcodes.some(b => normBarcode(b) === k)) { dup++; return; }
+    state.menuBarcodes.push(p); added++;
+  });
+  renderMenuBarcodeChips();
+  return { added, dup };
+}
+function commitMenuBarcodeInput() {
+  const inp = document.getElementById("menu-barcode");
+  const v = inp.value.trim();
+  if (!v) return;
+  const r = addMenuBarcode(v);
+  inp.value = "";
+  if (!r.added && r.dup) toast("มีบาร์โค้ดนี้ในเมนูแล้ว", true);
+}
+document.getElementById("menu-barcode-add").addEventListener("click", () => { commitMenuBarcodeInput(); document.getElementById("menu-barcode").focus(); });
 document.getElementById("menu-barcode-scan").addEventListener("click", () =>
-  openScanner({ title: "สแกนบาร์โค้ดของเมนูนี้", onScan: (code) => { document.getElementById("menu-barcode").value = String(code).trim(); } })
+  // สแกนต่อเนื่อง: สแกนได้หลายตัวติดกันโดยไม่ต้องเปิดใหม่ ปิดหน้าสแกนเองเมื่อครบ
+  openScanner({ title: "สแกนบาร์โค้ดของเมนูนี้ (สแกนได้หลายตัว)", continuous: true, onScan: (code) => {
+    const r = addMenuBarcode(code);
+    return r.added ? `✅ เพิ่ม ${String(code).trim()} แล้ว — ในเมนูนี้มี ${state.menuBarcodes.length} บาร์โค้ด (สแกนต่อหรือกด ✕ เพื่อปิด)` : `มีบาร์โค้ด ${String(code).trim()} ในเมนูนี้แล้ว`;
+  } })
 );
 document.getElementById("menu-barcode").addEventListener("keydown", (e) => {
-  if (e.key === "Enter") e.preventDefault(); // เครื่องยิงกด Enter ท้ายเลข ไม่ให้ฟอร์มถูกส่งก่อนกรอกครบ
+  if (e.key === "Enter") { e.preventDefault(); commitMenuBarcodeInput(); } // เครื่องยิงกด Enter ท้ายเลข = เพิ่มเข้ารายการ ไม่ส่งฟอร์ม
 });
 document.getElementById("btn-add-menu").addEventListener("click", () => {
   if (!state.codes.length) { toast('ยังไม่มี Code — ไปสร้างที่ "จัดการ Code" ก่อน', true); return; }
@@ -1539,6 +1586,7 @@ document.getElementById("btn-add-menu").addEventListener("click", () => {
 
 document.getElementById("form-add-menu").addEventListener("submit", async (e) => {
   e.preventDefault();
+  commitMenuBarcodeInput(); // เลขที่พิมพ์ค้างในช่องแต่ยังไม่กด "+ เพิ่ม" ให้เข้ารายการด้วย กันหาย
   const menuId = document.getElementById("menu-id").value;
   const name = document.getElementById("menu-name").value.trim();
   const packaging = document.getElementById("menu-packaging").value.trim();
@@ -1562,7 +1610,7 @@ document.getElementById("form-add-menu").addEventListener("submit", async (e) =>
     // หมวดอื่นไม่ใช้ราคาต่อกิโล ส่งค่าว่างเพื่อเคลียร์ค่าเก่า (กรณีย้ายเมนูออกจากหมวดชั่งกิโล)
     priceKg: WEIGHED_CATEGORIES.includes(category) ? document.getElementById("menu-price-kg").value : "",
     codeId, image: state.menuImageDataUrl || "",
-    barcode: document.getElementById("menu-barcode").value.trim() // ว่าง = ลบบาร์โค้ดของเมนูนี้
+    barcode: state.menuBarcodes.join(",") // หลายตัวคั่นด้วย "," ว่าง = ลบบาร์โค้ดทั้งหมดของเมนูนี้
   };
   if (menuId) {
     payload.menuId = menuId;
@@ -1625,7 +1673,7 @@ function renderMenusAdminList() {
       ${m.image ? `<img src="${m.image}" alt="">` : `<div class="ph">🍉</div>`}
       <div class="info">
         <div class="title">${m.displayName}</div>
-        <div class="sub">${m.barcode ? "▮ " + slipEsc(m.barcode) + " · " : ""}${m.category || "-"} · ${isWeighedMenu(m) ? "ไม่หักบรรจุภัณฑ์" : (code ? code.name : "(ไม่พบ Code นี้แล้ว)")} · ${priceText}</div>
+        <div class="sub">${m.barcode ? m.barcode.split(",").map(b => "▮ " + slipEsc(b)).join(" ") + " · " : ""}${m.category || "-"} · ${isWeighedMenu(m) ? "ไม่หักบรรจุภัณฑ์" : (code ? code.name : "(ไม่พบ Code นี้แล้ว)")} · ${priceText}</div>
         <div class="sub ${m.status === "hidden" ? "hidden-badge" : ""}">${m.status === "hidden" ? "ซ่อนอยู่" : "แสดงอยู่ในหน้าขาย"} · ลำดับ ${m.order}</div>
       </div>
       <div class="acts">

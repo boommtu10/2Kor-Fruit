@@ -67,6 +67,9 @@
 .dash-kpi .v.pos{color:#2F5233}
 .dash-kpi .v.neg{color:#c0392b}
 .dash-chart svg{width:100%;height:auto;display:block}
+.bc-chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}
+.bc-chip{display:inline-flex;align-items:center;gap:4px;background:#eef3ea;border:1px solid #cfdcc8;border-radius:999px;padding:4px 6px 4px 10px;font-size:13.5px;font-weight:600;color:#2F5233}
+.bc-chip button{border:none;background:rgba(47,82,51,.15);color:#2F5233;width:20px;height:20px;border-radius:50%;font-size:12px;line-height:1;cursor:pointer;padding:0}
 .ch-filter{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 10px}
 .ch-chip{display:flex;flex-direction:column;align-items:flex-start;gap:2px;padding:8px 12px;border-radius:12px;border:1.5px solid #d8d2c2;background:#fff;font-family:inherit;color:#4a453a;cursor:pointer;text-align:left;min-width:92px}
 .ch-chip .n{font-size:13.5px;font-weight:700}
@@ -636,11 +639,14 @@
       </div>
       <div class="field"><label>ชื่อเมนู</label><input type="text" id="menu-name" maxlength="60" required></div>
       <div class="field">
-        <label>บาร์โค้ด (ไม่บังคับ — ใส่แล้วพนักงานสแกนตอนขายได้เลย)</label>
+        <label>บาร์โค้ด (ไม่บังคับ — ใส่ได้หลายตัวต่อ 1 เมนู พนักงานสแกนตัวไหนก็ลงเมนูนี้)</label>
+        <div id="menu-barcode-chips" class="bc-chips"></div>
         <div style="display:flex;gap:8px">
-          <input type="text" id="menu-barcode" inputmode="numeric" autocomplete="off" maxlength="40" placeholder="สแกนหรือพิมพ์เลขบาร์โค้ด" style="flex:1;min-width:0">
+          <input type="text" id="menu-barcode" inputmode="numeric" autocomplete="off" maxlength="60" placeholder="พิมพ์หรือยิงเลขบาร์โค้ด แล้วกด + เพิ่ม" style="flex:1;min-width:0">
+          <button type="button" class="btn outline" id="menu-barcode-add" style="width:auto;padding:0 14px;white-space:nowrap">+ เพิ่ม</button>
           <button type="button" class="btn outline" id="menu-barcode-scan" style="width:auto;padding:0 14px;white-space:nowrap">📷 สแกน</button>
         </div>
+        <div class="hint">เช่น เมนูเดียวกันที่ขายหลายช่องทางแล้วมีบาร์โค้ดคนละตัว ใส่ทั้งสองตัวได้เลย ราคาที่ขึ้นตอนขายจะเป็นราคาตามช่องทางที่เลือกไว้ในหน้าขาย</div>
       </div>
       <div class="field">
         <label>ป้ายบรรจุภัณฑ์ (ไม่ใส่ก็ได้ — ใส่เมื่อผลไม้ชนิดนี้มีหลายขนาด เช่น 500ml.)</label>
