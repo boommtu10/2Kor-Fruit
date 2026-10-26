@@ -393,6 +393,11 @@ function scanBeep() {
     .scan-video-wrap video{width:100%;height:100%;object-fit:cover;display:block}
     .scan-frame{position:absolute;left:10%;right:10%;top:30%;bottom:30%;border:3px solid rgba(255,255,255,.9);border-radius:12px;box-shadow:0 0 0 9999px rgba(0,0,0,.28);pointer-events:none}
     .scan-status{padding:10px 14px;font-size:14px;min-height:20px;color:#332f26;line-height:1.4}
+    .scan-qty{display:flex;align-items:center;gap:8px;padding:0 14px 10px}
+    .scan-qty.hidden{display:none}
+    .scan-qty span{flex:1;font-size:13.5px;font-weight:600;color:#4a453a;line-height:1.3}
+    .scan-qty button{width:40px;height:40px;border-radius:10px;border:1.4px solid #d8d2c2;background:#fff;font-size:22px;font-weight:700;color:#2F5233;cursor:pointer;font-family:inherit}
+    .scan-qty input{width:68px;box-sizing:border-box;text-align:center;padding:8px 4px;border:1.4px solid #d8d2c2;border-radius:10px;font-size:18px;font-weight:700;font-family:inherit}
     .scan-manual{display:flex;gap:8px;padding:0 14px 14px}
     .scan-manual input{flex:1;min-width:0;padding:10px 12px;border:1.4px solid #d8d2c2;border-radius:10px;font-size:16px;font-family:inherit}
     .scan-manual button{padding:0 16px;border:none;border-radius:10px;background:#2F5233;color:#fff;font-family:inherit;font-weight:700;font-size:14px;cursor:pointer}
@@ -405,6 +410,12 @@ function scanBeep() {
       <div class="scan-head"><span id="scan-title">สแกนบาร์โค้ด</span><button type="button" id="scan-close" title="ปิด">✕</button></div>
       <div class="scan-video-wrap"><video id="scan-video" playsinline muted autoplay></video><div class="scan-frame"></div></div>
       <div class="scan-status" id="scan-status"></div>
+      <div class="scan-qty hidden" id="scan-qty-row">
+        <span>จำนวนต่อการสแกน<br><small style="font-weight:400;color:#7a7566">สแกนครั้งเดียวได้ตามจำนวนนี้ แล้วกลับเป็น 1</small></span>
+        <button type="button" id="scan-qty-minus" aria-label="ลดจำนวน">−</button>
+        <input type="number" id="scan-qty" inputmode="numeric" min="1" max="999" step="1" value="1">
+        <button type="button" id="scan-qty-plus" aria-label="เพิ่มจำนวน">+</button>
+      </div>
       <div class="scan-manual">
         <input type="text" id="scan-manual" inputmode="numeric" autocomplete="off" placeholder="หรือพิมพ์เลขบาร์โค้ดเอง">
         <button type="button" id="scan-manual-ok">ตกลง</button>
@@ -412,7 +423,25 @@ function scanBeep() {
     </div>`;
   document.body.appendChild(el);
   document.getElementById("scan-close").addEventListener("click", () => closeScanner());
+  const qtyInp = document.getElementById("scan-qty");
+  const bump = (d) => { const n = Math.floor(Number(qtyInp.value)) || 1; qtyInp.value = String(Math.min(999, Math.max(1, n + d))); };
+  document.getElementById("scan-qty-minus").addEventListener("click", () => bump(-1));
+  document.getElementById("scan-qty-plus").addEventListener("click", () => bump(1));
+  qtyInp.addEventListener("focus", () => qtyInp.select());
+  qtyInp.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); qtyInp.blur(); } });
 })();
+
+// จำนวนต่อการสแกน (เฉพาะหน้าขาย): อ่านค่าจากช่องในหน้าสแกน ถ้าไม่ได้เปิดหน้าสแกนอยู่ (เช่น เครื่องยิงบาร์โค้ด) = 1
+// ใช้แล้วรีเซ็ตกลับเป็น 1 ทันที กันสแกนสินค้าถัดไปแล้วได้จำนวนเดิมโดยไม่ตั้งใจ
+function takeScanQty() {
+  if (!SCAN.open) return 1;
+  const inp = document.getElementById("scan-qty");
+  let n = inp ? Math.floor(Number(inp.value)) : 1;
+  if (!isFinite(n) || n < 1) n = 1;
+  if (n > 999) n = 999;
+  if (inp) inp.value = "1";
+  return n;
+}
 
 function setScanStatus(msg) { const e = document.getElementById("scan-status"); if (e) e.textContent = msg || ""; }
 
@@ -427,12 +456,14 @@ function closeScanner() {
 }
 document.addEventListener("visibilitychange", () => { if (document.hidden && SCAN.open) closeScanner(); });
 
-// opts: { title, continuous (สแกนต่อเนื่องไม่ปิดเอง — ใช้หน้าขาย), onScan(code) -> ข้อความสถานะ (ไม่บังคับ) }
+// opts: { title, continuous (สแกนต่อเนื่องไม่ปิดเอง — ใช้หน้าขาย), withQty (โชว์ช่องจำนวนต่อการสแกน — ใช้หน้าขาย), onScan(code) -> ข้อความสถานะ (ไม่บังคับ) }
 async function openScanner(opts) {
   if (SCAN.open) return;
   SCAN.open = true;
   const video = document.getElementById("scan-video");
   document.getElementById("scan-title").textContent = opts.title || "สแกนบาร์โค้ด";
+  document.getElementById("scan-qty-row").classList.toggle("hidden", !opts.withQty);
+  document.getElementById("scan-qty").value = "1";
   document.getElementById("scan-overlay").classList.remove("hidden");
   setScanStatus("กำลังเปิดกล้อง…");
   const manual = document.getElementById("scan-manual");
@@ -625,7 +656,7 @@ document.getElementById("btn-scan-receive").addEventListener("click", () =>
   openScanner({ title: "สแกนสินค้าที่จะรับเข้า", onScan: (code) => handleReceiveScan(code) })
 );
 
-// ---- หน้าขาย: สแกนแล้วเพิ่มเมนูที่ผูกกับสินค้านั้นลงบิล (ซ้ำ = เพิ่มจำนวนทีละ 1) ----
+// ---- หน้าขาย: สแกนแล้วเพิ่มเมนูที่ผูกกับสินค้านั้นลงบิล (ซ้ำ = เพิ่มจำนวนทีละ 1 หรือตามช่อง "จำนวนต่อการสแกน") ----
 // เมนูผูกบาร์โค้ดผ่าน Code: สินค้าหมวด "อื่นๆ" ที่มีบาร์โค้ด + อยู่ใน Code ของเมนูนั้น (Code.gs: getMenus -> barcodes)
 let lastMenuReloadAt = 0;
 function menusForBarcode(code) {
@@ -654,6 +685,7 @@ async function handleSalesBarcode(code) {
 }
 
 function scanAddMenu(menu) {
+  const n = takeScanQty(); // ต้องอ่านก่อน closeScanner() เพราะปิดสแกนแล้วจะอ่านไม่ได้
   const price = getMenuPriceForChannel(menu, state.salesChannel);
   if (price === "" || isWeighedMenu(menu)) {
     // ราคาไม่ตายตัวในช่องทางนี้ หรือเป็นผลไม้ชั่งกิโล (ต้องเลือกหน่วยลูก/กิโล) -> เปิดการ์ดเมนูให้กรอกเอง (ปิดกล้องก่อนจะได้พิมพ์ได้)
@@ -661,7 +693,7 @@ function scanAddMenu(menu) {
     const tile = document.querySelector(`.sm-tile[data-menu-id="${menu.id}"]`);
     if (tile) {
       openSaleTile(tile);
-      tile.querySelector(".sm-tile-qty").value = "1";
+      tile.querySelector(".sm-tile-qty").value = String(n);
       updateTileConfirmVisibility(tile);
       tile.scrollIntoView({ block: "center", behavior: "smooth" });
       setTimeout(() => tile.querySelector(".sm-tile-price").focus(), 150);
@@ -670,10 +702,11 @@ function scanAddMenu(menu) {
   }
   const same = state.cart.find(p => p.menu.id === menu.id && String(p.price) === String(price) && !p.unit && !p.note && !p.error);
   let qty;
-  if (same) { same.qty = String((Number(same.qty) || 0) + 1); qty = same.qty; }
-  else { state.cart.push({ uid: ++cartUid, menu, qty: "1", price: String(price), unit: "", note: "", error: "" }); qty = "1"; }
+  if (same) { same.qty = String((Number(same.qty) || 0) + n); qty = same.qty; }
+  else { state.cart.push({ uid: ++cartUid, menu, qty: String(n), price: String(price), unit: "", note: "", error: "" }); qty = String(n); }
   updateCartUI();
-  return `✅ ${menu.displayName} ×${qty} (${money(price)}) · ในบิล ${state.cart.length} รายการ`;
+  const added = n > 1 ? `+${n} (รวม ×${qty})` : `×${qty}`;
+  return `✅ ${menu.displayName} ${added} (${money(price)}) · ในบิล ${state.cart.length} รายการ`;
 }
 
 function chooseMenuForScan(menus) {
@@ -703,7 +736,7 @@ function chooseMenuForScan(menus) {
 
 document.getElementById("btn-sm-scan").addEventListener("click", () => {
   if (!state.salesChannel) { toast("กรุณาเลือกช่องทางการจำหน่ายก่อน", true); return; }
-  openScanner({ title: "สแกนสินค้าลงบิล", continuous: true, onScan: (code) => handleSalesBarcode(code) });
+  openScanner({ title: "สแกนสินค้าลงบิล", continuous: true, withQty: true, onScan: (code) => handleSalesBarcode(code) });
 });
 
 async function refreshProducts() {
@@ -914,6 +947,7 @@ async function refreshLowStock() {
     state.lowStockList = low; // เก็บรายการเต็มไว้ ให้หน้า "ดูทั้งหมด" เอาไปใช้ต่อได้เลย ไม่ต้องยิง API ซ้ำ
 
     const card = document.getElementById("dash-lowstock-card");
+    if (!card) return; // หน้าหลักเปลี่ยนเป็นแดชบอร์ดแล้ว ไม่มีการ์ดสินค้าใกล้หมด (เก็บรายการไว้ใน state เฉยๆ)
     if (!low.length) { card.innerHTML = '<div class="empty-state">สต๊อกทุกอย่างปกติดี 👍</div>'; return; }
 
     card.innerHTML = "";
@@ -2128,15 +2162,160 @@ document.getElementById("form-cost").addEventListener("submit", async (e) => {
 // ============================================================
 // DASHBOARD (สรุปวันนี้) — สูตรกำไรเดิม ไม่เปลี่ยน
 // ============================================================
+// สีประจำแต่ละช่องทาง (ใช้ทั้งแถบสัดส่วนและการ์ด) ช่องทางที่ไม่รู้จักใช้สีสำรองวนไป
+const DASH_CHANNEL_COLORS = { "หน้าบ้าน": "#2F5233", "จ๊ะนวล": "#E8833A", "Line Man": "#2E8BC0", "Ning Marking": "#8E5BA6", "สั่งออนไลน์": "#C9A227" };
+const DASH_FALLBACK_COLORS = ["#D1495B", "#00798C", "#6B705C", "#B5838D"];
+function dashChannelColor(name, idx) {
+  if (DASH_CHANNEL_COLORS[name]) return DASH_CHANNEL_COLORS[name];
+  if (name === "ไม่ระบุช่องทาง") return "#9a9486";
+  return DASH_FALLBACK_COLORS[idx % DASH_FALLBACK_COLORS.length];
+}
+
+// ยอดขายวันนี้แยกตามช่องทาง: แถบสัดส่วนรวม + การ์ดต่อช่องทาง (ยอดเงิน · จำนวนรายการ · % ของยอดรวม)
+// ใช้รายการขายของวันนี้ที่ getSummary ส่งมาอยู่แล้ว ไม่ต้องยิง API เพิ่ม
+function renderDashChannels(list) {
+  const wrap = document.getElementById("dash-channels");
+  if (!wrap) return;
+  const stat = {};
+  let grand = 0;
+  (list || []).forEach(r => {
+    const ch = saleChannelOf(r);
+    if (!stat[ch]) stat[ch] = { count: 0, sum: 0 };
+    stat[ch].count++; stat[ch].sum += Number(r.total) || 0; grand += Number(r.total) || 0;
+  });
+  const known = Object.keys(CHANNEL_PRICE_KEY);
+  const names = known.concat(Object.keys(stat).filter(c => !known.includes(c)));
+  const active = names.filter(c => stat[c] && stat[c].sum > 0);
+  const topName = active.length > 1 ? active.slice().sort((x, y) => stat[y].sum - stat[x].sum)[0] : "";
+
+  let html = `<div class="dash-total"><span class="t">ยอดขายรวมวันนี้</span><span class="v">${slipEsc(money(grand))}</span></div>`;
+  html += '<div class="dash-stack">';
+  if (grand > 0) {
+    names.forEach((c, i) => {
+      const st = stat[c];
+      if (st && st.sum > 0) html += `<span style="width:${(st.sum / grand * 100).toFixed(2)}%;background:${dashChannelColor(c, i)}" title="${slipEsc(c)}"></span>`;
+    });
+  }
+  html += '</div><div class="dash-ch-grid">';
+  names.forEach((c, i) => {
+    const st = stat[c] || { count: 0, sum: 0 };
+    const pct = grand > 0 ? st.sum / grand * 100 : 0;
+    html += `<div class="dash-ch${st.count ? "" : " zero"}" style="--c:${dashChannelColor(c, i)}">` +
+      (c === topName ? '<span class="tag">สูงสุด</span>' : "") +
+      `<div class="nm">${slipEsc(c)}</div>` +
+      `<div class="v">${slipEsc(money(st.sum))}</div>` +
+      `<div class="sb">${st.count} รายการ · ${Math.round(pct)}%</div>` +
+      `<div class="bar"><i style="width:${pct.toFixed(1)}%"></i></div></div>`;
+  });
+  html += "</div>";
+  if (grand <= 0) html += '<div class="hint" style="margin-top:10px">วันนี้ยังไม่มียอดขาย — เมื่อมีรายการขาย ตัวเลขจะขึ้นที่นี่</div>';
+  wrap.innerHTML = html;
+}
+
+// ตัวเลขย่อสำหรับป้ายบนกราฟ เช่น 12,345 -> 12.3k
+function dashCompact(n) {
+  const v = Math.abs(n);
+  let t;
+  if (v >= 1e6) t = (v / 1e6).toFixed(1).replace(/\.0$/, "") + "M";
+  else if (v >= 1000) t = (v / 1000).toFixed(v >= 10000 ? 0 : 1).replace(/\.0$/, "") + "k";
+  else t = String(Math.round(v));
+  return (n < 0 ? "-" : "") + "฿" + t;
+}
+// รายชื่อ n เดือนล่าสุด (เก่า -> ใหม่) พร้อมป้ายเดือนแบบไทย เช่น "ต.ค. 69"
+function dashMonthList(n) {
+  const now = new Date(), out = [];
+  for (let i = n - 1; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    out.push({
+      key: d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0"),
+      label: d.toLocaleDateString("th-TH", { month: "short" }) + " " + String(d.getFullYear() + 543).slice(-2),
+    });
+  }
+  return out;
+}
+// กราฟแท่งกำไรรายเดือน (SVG วาดเอง ไม่ใช้ไลบรารี) เดือนล่าสุดสีเข้ม เดือนก่อนหน้าสีอ่อน กำไรติดลบเป็นสีแดง
+function renderProfitChart(wrap, months) {
+  const okVals = months.filter(m => m.ok).map(m => m.profit);
+  if (!okVals.length) { wrap.innerHTML = '<div class="empty-state">โหลดกราฟกำไรไม่สำเร็จ ลองกลับมาที่หน้าหลักอีกครั้ง</div>'; return; }
+  const W = 640, H = 250, top = 30, bottom = 36, side = 10;
+  const maxV = Math.max(0, ...okVals), minV = Math.min(0, ...okVals);
+  const range = (maxV - minV) || 1;
+  const plotH = H - top - bottom;
+  const y = v => top + (maxV - v) / range * plotH;
+  const y0 = y(0);
+  const slot = (W - side * 2) / months.length;
+  const bw = Math.min(54, slot * 0.56);
+  let g = `<line x1="${side}" x2="${W - side}" y1="${y0}" y2="${y0}" stroke="#d8d2c2" stroke-dasharray="4 4"/>`;
+  months.forEach((m, i) => {
+    const cx = side + slot * i + slot / 2;
+    const cur = i === months.length - 1;
+    if (m.ok) {
+      const h = Math.max(2, Math.abs(y(m.profit) - y0));
+      const yTop = m.profit >= 0 ? y0 - h : y0;
+      const fill = m.profit >= 0 ? (cur ? "#2F5233" : "#9CC3A4") : (cur ? "#C0392B" : "#E3A8A0");
+      g += `<rect x="${(cx - bw / 2).toFixed(1)}" y="${yTop.toFixed(1)}" width="${bw.toFixed(1)}" height="${h.toFixed(1)}" rx="6" fill="${fill}"><title>${m.label}: กำไร ${money(m.profit)} (ยอดขาย ${money(m.revenue)})</title></rect>`;
+      const ly = m.profit >= 0 ? yTop - 7 : yTop + h + 14;
+      g += `<text x="${cx.toFixed(1)}" y="${ly.toFixed(1)}" text-anchor="middle" font-size="12.5" font-weight="700" fill="${m.profit >= 0 ? "#2b2a24" : "#C0392B"}" style="font-family:inherit">${dashCompact(m.profit)}</text>`;
+    } else {
+      g += `<text x="${cx.toFixed(1)}" y="${(y0 - 7).toFixed(1)}" text-anchor="middle" font-size="12.5" fill="#9a9486" style="font-family:inherit">—</text>`;
+    }
+    g += `<text x="${cx.toFixed(1)}" y="${H - 12}" text-anchor="middle" font-size="12.5" font-weight="${cur ? 700 : 500}" fill="${cur ? "#2F5233" : "#7a7566"}" style="font-family:inherit">${m.label}</text>`;
+  });
+
+  // สรุปเหนือกราฟ: กำไรเดือนนี้ + เทียบเดือนก่อน + ยอดขายเดือนนี้
+  const cur = months[months.length - 1], prev = months[months.length - 2];
+  let kpis = '<div class="dash-kpis">';
+  if (cur.ok) {
+    kpis += `<div class="dash-kpi"><div class="t">กำไรเดือนนี้</div><div class="v ${cur.profit >= 0 ? "pos" : "neg"}">${slipEsc(money(cur.profit))}</div></div>`;
+    if (prev && prev.ok) {
+      const diff = cur.profit - prev.profit;
+      const pctTxt = prev.profit > 0 ? ` (${diff >= 0 ? "+" : ""}${Math.round(diff / prev.profit * 100)}%)` : "";
+      kpis += `<div class="dash-kpi"><div class="t">เทียบเดือนก่อน</div><div class="v ${diff >= 0 ? "pos" : "neg"}">${diff >= 0 ? "+" : "-"}${slipEsc(money(Math.abs(diff)))}${pctTxt}</div></div>`;
+    }
+    kpis += `<div class="dash-kpi"><div class="t">ยอดขายเดือนนี้</div><div class="v">${slipEsc(money(cur.revenue))}</div></div>`;
+  }
+  kpis += "</div>";
+  wrap.innerHTML = kpis + `<div class="dash-chart"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="กราฟกำไรรายเดือน">${g}</svg></div>`;
+}
+// โหลดกำไรรายเดือนด้วย getSummary แบบ "month" (สูตรกำไรเดียวกับหน้าสรุปยอดเป๊ะ) ยิงขนานทุกเดือน
+// เดือนที่ผ่านมาแล้วจำไว้ 10 นาที เดือนปัจจุบันโหลดใหม่ทุกครั้ง ถ้ามีข้อมูลเก่าให้โชว์ก่อนแล้วค่อยอัปเดต
+async function loadDashboardProfitChart() {
+  const wrap = document.getElementById("dash-profit-chart");
+  if (!wrap) return;
+  const months = dashMonthList(6);
+  const cache = state.dashMonthCache || (state.dashMonthCache = {});
+  const curKey = months[months.length - 1].key;
+  const reqId = state.dashChartReq = (state.dashChartReq || 0) + 1;
+  const toRows = () => months.map(m => ({ label: m.label, ok: !!cache[m.key], profit: cache[m.key] ? cache[m.key].profit : 0, revenue: cache[m.key] ? cache[m.key].revenue : 0 }));
+  if (months.some(m => cache[m.key])) renderProfitChart(wrap, toRows());
+  else wrap.innerHTML = '<div class="empty-state">กำลังโหลดกราฟ…</div>';
+  const need = months.filter(m => m.key === curKey || !cache[m.key] || Date.now() - cache[m.key].ts > 600000);
+  await Promise.all(need.map(async m => {
+    try {
+      const s = await apiGet("getSummary", { period: "month", date: m.key + "-01" });
+      if (s && typeof s.profit === "number") cache[m.key] = { ts: Date.now(), profit: s.profit, revenue: Number(s.totalRevenue) || 0 };
+    } catch (err) { /* เดือนไหนโหลดไม่ได้ก็โชว์ "—" เดือนอื่นยังขึ้นปกติ */ }
+  }));
+  if (reqId !== state.dashChartReq) return; // มีการโหลดรอบใหม่แทรกเข้ามาแล้ว ให้รอบใหม่วาดแทน
+  renderProfitChart(wrap, toRows());
+}
+
 async function loadDashboard() {
+  loadDashboardProfitChart(); // ไม่ต้องรอ ให้กราฟโหลดขนานไปกับยอดวันนี้
   try {
-    const today = new Date().toISOString().slice(0, 10);
-    const sum = await apiGet("getSummary", { period: "day", date: today });
+    // ใช้วันที่ตามเครื่อง (todayStr) ไม่ใช้ toISOString เพราะเป็นเวลา UTC
+    // ช่วงเที่ยงคืน-7 โมงเช้าไทยจะได้ "เมื่อวาน" ทำให้ยอดวันนี้ว่างผิดวัน
+    const sum = await apiGet("getSummary", { period: "day", date: todayStr() });
     document.getElementById("dash-revenue").textContent = money(sum.totalRevenue);
     document.getElementById("dash-profit").textContent = money(sum.profit);
     document.getElementById("dash-waste").textContent = money(sum.totalWaste);
     document.getElementById("dash-count").textContent = sum.countStockOut ?? 0;
-  } catch (err) { toast("โหลดสรุปวันนี้ไม่สำเร็จ", true); }
+    renderDashChannels(sum.stockOutList);
+  } catch (err) {
+    toast("โหลดสรุปวันนี้ไม่สำเร็จ", true);
+    const w = document.getElementById("dash-channels");
+    if (w) w.innerHTML = '<div class="empty-state">โหลดยอดขายแยกช่องทางไม่สำเร็จ</div>';
+  }
 }
 
 // ============================================================
