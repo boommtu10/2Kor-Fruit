@@ -25,7 +25,7 @@ const state = {
 // ช่องทางการจำหน่าย ต้องตรงกับ data-channel ของปุ่ม .sm-channel-chip ใน
 // index.html และ SALES_CHANNELS ฝั่ง Code.gs — ใช้แมปไปหา key ราคาที่ตั้งไว้
 // ต่อเมนู 1 รายการ (ดู getMenuPriceForChannel ด้านล่าง)
-const CHANNEL_PRICE_KEY = { "หน้าบ้าน": "priceFront", "จ๊ะนวล": "priceJanuan", "Line Man": "priceLineman" };
+const CHANNEL_PRICE_KEY = { "หน้าบ้าน": "priceFront", "จ๊ะนวล": "priceJanuan", "Line Man": "priceLineman", "Ning Marking": "priceNing" };
 // หมวดผลไม้สดชั่งกิโล: ไม่ผูก Code ไม่หักบรรจุภัณฑ์ตอนขาย (ถุงตัดสต๊อกเป็นรอบๆ เอง) และต้องเลือกหน่วย ลูก/กิโล
 // ต้องตรงกับ WEIGHED_CATEGORIES ใน Code.gs (ราคาหน้าบ้านของเมนูเหล่านี้ = ราคาต่อลูก ราคาต่อกิโลเก็บแยกใน priceKg)
 const WEIGHED_CATEGORIES = ["ผลไม้สดชั่งกิโล"];
@@ -1479,6 +1479,7 @@ function openMenuModal(menu) {
   document.getElementById("menu-price-front").value = (menu && menu.priceFront !== "" && menu.priceFront !== undefined) ? menu.priceFront : "";
   document.getElementById("menu-price-januan").value = (menu && menu.priceJanuan !== "" && menu.priceJanuan !== undefined) ? menu.priceJanuan : "";
   document.getElementById("menu-price-lineman").value = (menu && menu.priceLineman !== "" && menu.priceLineman !== undefined) ? menu.priceLineman : "";
+  document.getElementById("menu-price-ning").value = (menu && menu.priceNing !== "" && menu.priceNing !== undefined && menu.priceNing !== null) ? menu.priceNing : "";
   document.getElementById("menu-barcode").value = menu ? (menu.barcode || "") : "";
   document.getElementById("menu-price-kg").value = (menu && menu.priceKg !== "" && menu.priceKg !== undefined && menu.priceKg !== null) ? menu.priceKg : "";
   document.getElementById("menu-order").value = menu ? menu.order : "";
@@ -1518,11 +1519,12 @@ document.getElementById("form-add-menu").addEventListener("submit", async (e) =>
   const priceFrontVal = document.getElementById("menu-price-front").value;
   const priceJanuanVal = document.getElementById("menu-price-januan").value;
   const priceLinemanVal = document.getElementById("menu-price-lineman").value;
+  const priceNingVal = document.getElementById("menu-price-ning").value;
   const orderVal = document.getElementById("menu-order").value;
 
   const payload = {
     name, packaging, category,
-    priceFront: priceFrontVal, priceJanuan: priceJanuanVal, priceLineman: priceLinemanVal,
+    priceFront: priceFrontVal, priceJanuan: priceJanuanVal, priceLineman: priceLinemanVal, priceNing: priceNingVal,
     // หมวดอื่นไม่ใช้ราคาต่อกิโล ส่งค่าว่างเพื่อเคลียร์ค่าเก่า (กรณีย้ายเมนูออกจากหมวดชั่งกิโล)
     priceKg: WEIGHED_CATEGORIES.includes(category) ? document.getElementById("menu-price-kg").value : "",
     codeId, image: state.menuImageDataUrl || "",
@@ -1555,7 +1557,7 @@ async function loadMenusAdmin() {
   } catch (err) { wrap.innerHTML = '<div class="empty-state">โหลดเมนูไม่สำเร็จ</div>'; }
 }
 
-// สรุปราคาทั้ง 3 ช่องทางเป็นข้อความเดียว เช่น "หน้าบ้าน 35 · จ๊ะนวล 30 ·
+// สรุปราคาทุกช่องทางเป็นข้อความเดียว เช่น "หน้าบ้าน 35 · จ๊ะนวล 30 ·
 // Line Man กรอกเอง" ช่องทางไหนไม่ได้ตั้งราคาตายตัวไว้จะโชว์ "กรอกเอง"
 function formatMenuPrices(m) {
   return Object.keys(CHANNEL_PRICE_KEY).map(ch => {
@@ -2262,28 +2264,94 @@ document.getElementById("summary-export-btn").addEventListener("click", () => {
   downloadCSV(`สรุปยอด-${sum.period}.csv`, rows);
 });
 
+// ------------------------------------------------------------
+// ตัวกรองช่องทางการจำหน่าย (หลังบ้าน) ใช้ร่วมกันในหน้า "สรุปยอด" และ "รายการวันนี้"
+// กรองฝั่งหน้าเว็บจากรายการที่โหลดมาแล้ว (ไม่ยิง API เพิ่ม และไม่กระทบตัวเลขกำไร/ยอดรวมด้านบน)
+// แต่ละปุ่มโชว์ ยอดขาย · จำนวนรายการ · สัดส่วน% ของช่องทางนั้น และติดป้าย "สูงสุด" ให้ช่องทางที่ยอดมากที่สุด
+// ------------------------------------------------------------
+const NO_CHANNEL_LABEL = "ไม่ระบุช่องทาง";
+function saleChannelOf(r) { return String(r.channel || "").trim() || NO_CHANNEL_LABEL; }
+function filterSalesByChannel(list, ch) { return ch ? (list || []).filter(r => saleChannelOf(r) === ch) : (list || []); }
+function buildChannelFilter(holder, list, current, onPick) {
+  holder.innerHTML = "";
+  if (!list || !list.length) return;
+  const stat = {};
+  let grand = 0;
+  list.forEach(r => {
+    const ch = saleChannelOf(r);
+    const t = Number(r.total) || 0;
+    if (!stat[ch]) stat[ch] = { count: 0, sum: 0 };
+    stat[ch].count++; stat[ch].sum += t; grand += t;
+  });
+  // ช่องทางที่ตั้งไว้ในระบบมาก่อน ตามด้วยช่องทางอื่นที่เจอในข้อมูล (เช่น สั่งออนไลน์)
+  const known = Object.keys(CHANNEL_PRICE_KEY);
+  const names = known.concat(Object.keys(stat).filter(c => !known.includes(c)));
+  if (current && !names.includes(current)) names.push(current);
+  const active = names.filter(c => stat[c]);
+  const topName = active.length > 1 ? active.slice().sort((x, y) => stat[y].sum - stat[x].sum)[0] : "";
+
+  const bar = document.createElement("div");
+  bar.className = "ch-filter";
+  const mkChip = (name, label, sub, isTop) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "ch-chip" + ((current || "") === name ? " active" : "");
+    const n = document.createElement("span"); n.className = "n"; n.textContent = label;
+    const s = document.createElement("span"); s.className = "s"; s.textContent = sub;
+    b.appendChild(n); b.appendChild(s);
+    if (isTop) { const t = document.createElement("span"); t.className = "top"; t.textContent = "ยอดสูงสุด"; b.appendChild(t); }
+    b.addEventListener("click", () => onPick(name));
+    return b;
+  };
+  bar.appendChild(mkChip("", "ทั้งหมด", `${money(grand)} · ${list.length} รายการ`, false));
+  names.forEach(c => {
+    const st = stat[c] || { count: 0, sum: 0 };
+    const pct = grand > 0 ? Math.round(st.sum / grand * 100) : 0;
+    bar.appendChild(mkChip(c, c, st.count ? `${money(st.sum)} · ${st.count} รายการ · ${pct}%` : "ไม่มีรายการ", c === topName));
+  });
+  holder.appendChild(bar);
+  if (current) {
+    const st = stat[current] || { count: 0, sum: 0 };
+    const note = document.createElement("div");
+    note.className = "ch-note";
+    note.textContent = `แสดงเฉพาะช่องทาง "${current}": ${st.count} รายการ รวม ${money(st.sum)} (ตัวเลขกำไร/ต้นทุนด้านบนยังเป็นของทุกช่องทางรวมกัน)`;
+    holder.appendChild(note);
+  }
+}
+
 // แสดงรายการขายทีละแถวของช่วงที่เลือก (รายวัน/รายเดือน) ให้ไล่เช็คได้ว่า
 // รายการขายที่เกิดขึ้นจริงบันทึกลงระบบครบหรือยัง — ใหม่สุดอยู่บนสุด
 function renderSummaryStockOutList(list) {
   const wrap = document.getElementById("sum-stockout-list");
-  if (!list || !list.length) {
-    wrap.innerHTML = '<div class="empty-state">ยังไม่มีรายการขายที่บันทึกไว้ในช่วงนี้</div>';
-    return;
-  }
-  wrap.innerHTML = "";
-  list.forEach(r => {
-    const row = recordRow({
-      title: r.itemName || "(ไม่ระบุชื่อ)",
-      sub: `${fmtDT(r.date)} · จำนวน ${r.qty} × ${money(r.sellPrice)}${r.channel ? " · " + r.channel : ""}${r.employee ? " · " + r.employee : ""}${r.note ? " · " + r.note : ""}`,
-      amount: money(r.total), amountCls: "pos",
-      actions: [
-        actBtn("แก้ไข", () => editSaleRecord(r)),
-        actBtn("ลบ", () => deleteWithConfirm("deleteStockOut", { id: r.id, ts: r.ts },
-          `ลบรายการขาย "${r.itemName}" จำนวน ${r.qty} (${money(r.total)})?\nบรรจุภัณฑ์ที่หักไปจะถูกคืนเข้าสต๊อกให้`, "ลบรายการขายแล้ว", afterRecordChange), true),
-      ],
+  const holder = document.getElementById("sum-channel-filter");
+  const draw = () => {
+    if (!list || !list.length) {
+      if (holder) holder.innerHTML = "";
+      wrap.innerHTML = '<div class="empty-state">ยังไม่มีรายการขายที่บันทึกไว้ในช่วงนี้</div>';
+      return;
+    }
+    if (holder) buildChannelFilter(holder, list, state.sumChannel || "", ch => { state.sumChannel = ch; draw(); });
+    const shown = filterSalesByChannel(list, state.sumChannel || "");
+    if (!shown.length) {
+      wrap.innerHTML = '<div class="empty-state">ไม่มีรายการขายของช่องทางนี้ในช่วงนี้</div>';
+      return;
+    }
+    wrap.innerHTML = "";
+    shown.forEach(r => {
+      const row = recordRow({
+        title: r.itemName || "(ไม่ระบุชื่อ)",
+        sub: `${fmtDT(r.date)} · จำนวน ${r.qty} × ${money(r.sellPrice)}${r.channel ? " · " + r.channel : ""}${r.employee ? " · " + r.employee : ""}${r.note ? " · " + r.note : ""}`,
+        amount: money(r.total), amountCls: "pos",
+        actions: [
+          actBtn("แก้ไข", () => editSaleRecord(r)),
+          actBtn("ลบ", () => deleteWithConfirm("deleteStockOut", { id: r.id, ts: r.ts },
+            `ลบรายการขาย "${r.itemName}" จำนวน ${r.qty} (${money(r.total)})?\nบรรจุภัณฑ์ที่หักไปจะถูกคืนเข้าสต๊อกให้`, "ลบรายการขายแล้ว", afterRecordChange), true),
+        ],
+      });
+      wrap.appendChild(row);
     });
-    wrap.appendChild(row);
-  });
+  };
+  draw();
 }
 
 
@@ -2324,6 +2392,30 @@ function todayStat(label, value, cls) {
   return `<div class="stat-card ${cls || ""}"><div class="label">${label}</div><div class="value">${money(value)}</div></div>`;
 }
 
+// ส่วน "รายการขาย" ของหน้ารายการวันนี้ (หลังบ้าน) พร้อมตัวกรองช่องทางการจำหน่าย
+function renderTodaySalesSection(parent, sales) {
+  const lab = document.createElement("div");
+  lab.className = "section-label";
+  lab.style.marginTop = "18px";
+  parent.appendChild(lab);
+  const holder = document.createElement("div");
+  parent.appendChild(holder);
+  const card = document.createElement("div");
+  card.className = "card";
+  parent.appendChild(card);
+  const draw = () => {
+    const cur = state.todayChannel || "";
+    const shown = filterSalesByChannel(sales, cur);
+    lab.textContent = `รายการขาย (${shown.length}${cur ? " จาก " + (sales ? sales.length : 0) : ""})`;
+    buildChannelFilter(holder, sales, cur, ch => { state.todayChannel = ch; draw(); });
+    card.innerHTML = "";
+    if (!sales || !sales.length) { card.innerHTML = '<div class="empty-state">วันนี้ยังไม่มีรายการขาย</div>'; return; }
+    if (!shown.length) { card.innerHTML = '<div class="empty-state">วันนี้ไม่มีรายการขายของช่องทางนี้</div>'; return; }
+    shown.forEach(r => card.appendChild(todaySaleRow(r)));
+  };
+  draw();
+}
+
 async function loadTodayBackoffice() {
   const body = document.getElementById("today-body");
   document.getElementById("today-date-label").textContent = todayDateLabel();
@@ -2361,7 +2453,7 @@ async function loadTodayBackoffice() {
       sub: `${fmtTime(r.date)} · ${r.oldStock} → ${r.newStock}${r.note ? " · " + r.note : ""}${r.employee ? " · " + r.employee : ""}`,
       amount: (r.diff > 0 ? "+" : "") + r.diff, amountCls: r.diff < 0 ? "neg" : "pos",
     }));
-    todayCard(body, "รายการขาย", d.sales, "วันนี้ยังไม่มีรายการขาย", todaySaleRow);
+    renderTodaySalesSection(body, d.sales);
     todayCard(body, "ของเสีย", d.waste, "วันนี้ไม่มีของเสีย", r => recordRow({
       title: r.productName || "(ไม่ระบุชื่อ)",
       sub: `${fmtTime(r.date)} · จำนวน ${r.qty}${r.reason ? " · " + r.reason : ""}${r.employee ? " · " + r.employee : ""}`,

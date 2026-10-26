@@ -45,6 +45,14 @@
 .sm-channel-options{display:flex;gap:8px;flex-wrap:wrap}
 .sm-channel-chip{padding:9px 16px;border-radius:999px;border:1.5px solid #d8d2c2;background:#fff;font-family:inherit;font-size:14px;font-weight:600;color:#4a453a;cursor:pointer}
 .sm-channel-chip.active{background:#2F5233;border-color:#2F5233;color:#fff}
+.ch-filter{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 10px}
+.ch-chip{display:flex;flex-direction:column;align-items:flex-start;gap:2px;padding:8px 12px;border-radius:12px;border:1.5px solid #d8d2c2;background:#fff;font-family:inherit;color:#4a453a;cursor:pointer;text-align:left;min-width:92px}
+.ch-chip .n{font-size:13.5px;font-weight:700}
+.ch-chip .s{font-size:11.5px;color:#7a7566;font-weight:500}
+.ch-chip .top{font-size:10.5px;font-weight:700;color:#b36b00}
+.ch-chip.active{background:#2F5233;border-color:#2F5233;color:#fff}
+.ch-chip.active .s,.ch-chip.active .top{color:#e6efe0}
+.ch-note{font-size:12.5px;color:#4a453a;margin:0 2px 8px}
 .sm-grid{flex:1;display:grid;grid-template-columns:repeat(auto-fill,minmax(136px,1fr));gap:12px;padding:14px 16px 28px;overflow-y:auto;align-items:start}
 .sm-cat-heading{grid-column:1/-1;font-size:12.5px;font-weight:700;color:#8a5a2b;margin:8px 0 -2px}
 .sm-cat-heading:first-child{margin-top:0}
@@ -75,7 +83,7 @@
 .mm-row .acts{display:flex;flex-direction:column;gap:6px}
 .mm-row .acts button{font-size:12.5px;padding:6px 10px;border-radius:8px;border:1px solid #d8d2c2;background:#fff;cursor:pointer;font-family:inherit;white-space:nowrap}
 
-.mm-price-row{display:flex;gap:8px}
+.mm-price-row{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .mm-price-col{flex:1;min-width:0;display:flex;flex-direction:column;gap:4px}
 .mm-price-tag{font-size:11.5px;color:#7a7566;font-weight:600}
 .mm-price-col input{width:100%;box-sizing:border-box;padding:8px 10px;border:1.4px solid #d8d2c2;border-radius:9px;font-family:inherit;font-size:14px}
@@ -158,6 +166,7 @@
       <button type="button" class="sm-channel-chip" data-channel="หน้าบ้าน">หน้าบ้าน</button>
       <button type="button" class="sm-channel-chip" data-channel="จ๊ะนวล">จ๊ะนวล</button>
       <button type="button" class="sm-channel-chip" data-channel="Line Man">Line Man</button>
+      <button type="button" class="sm-channel-chip" data-channel="Ning Marking">Ning Marking</button>
     </div>
   </div>
 
@@ -344,7 +353,7 @@
       <!-- ---- เมนูขาย (ปุ่มรูปภาพในหน้า "ขายสินค้า") ---- -->
       <section data-view="menus" class="hidden">
         <h2 class="view-title">จัดการเมนูขาย</h2>
-        <div class="hint" style="margin-top:-6px">ปุ่มเมนูที่ตั้งไว้นี้จะไปโผล่ในหน้า "ขายสินค้า" ให้พนักงานแตะเลือกแทนการพิมพ์เอง แต่ละปุ่มผูกกับ Code เพื่อหักบรรจุภัณฑ์ให้อัตโนมัติ — ตั้งราคาแยกตามช่องทางได้ (หน้าบ้าน/จ๊ะนวล/Line Man) ช่องทางไหนไม่ตั้งราคาไว้ พนักงานจะกรอกเองตอนขายช่องทางนั้น</div>
+        <div class="hint" style="margin-top:-6px">ปุ่มเมนูที่ตั้งไว้นี้จะไปโผล่ในหน้า "ขายสินค้า" ให้พนักงานแตะเลือกแทนการพิมพ์เอง แต่ละปุ่มผูกกับ Code เพื่อหักบรรจุภัณฑ์ให้อัตโนมัติ — ตั้งราคาแยกตามช่องทางได้ (หน้าบ้าน/จ๊ะนวล/Line Man/Ning Marking) ช่องทางไหนไม่ตั้งราคาไว้ พนักงานจะกรอกเองตอนขายช่องทางนั้น</div>
         <button class="btn outline" type="button" id="btn-add-menu" style="margin:10px 0 12px">＋ เพิ่มเมนู</button>
         <div class="mm-grid" id="menus-list"><div class="empty-state">กำลังโหลด…</div></div>
       </section>
@@ -437,6 +446,7 @@
 
         <div class="section-label" style="margin-top:18px">รายการขายที่บันทึกไว้ (ช่วงนี้)</div>
         <div class="hint" style="margin:-6px 0 8px">ไล่เช็คทีละแถวว่ารายการขายที่เกิดขึ้นจริงบันทึกครบหรือยัง</div>
+        <div id="sum-channel-filter"></div>
         <div class="card" id="sum-stockout-list"><div class="empty-state">กำลังโหลด…</div></div>
 
         <div class="section-label">ข้อมูลอ้างอิงกระแสเงินสด (ไม่นับในสูตรกำไรด้านบน)</div>
@@ -633,6 +643,10 @@
           <div class="mm-price-col">
             <span class="mm-price-tag">Line Man</span>
             <input type="number" id="menu-price-lineman" min="0" step="any" placeholder="เว้นว่าง = กรอกเอง">
+          </div>
+          <div class="mm-price-col">
+            <span class="mm-price-tag">Ning Marking</span>
+            <input type="number" id="menu-price-ning" min="0" step="any" placeholder="เว้นว่าง = กรอกเอง">
           </div>
         </div>
       </div>
