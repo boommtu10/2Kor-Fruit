@@ -384,21 +384,22 @@ function scanBeep() {
 (function installScannerUI() {
   const st = document.createElement("style");
   st.textContent = `
-    #scan-overlay{position:fixed;inset:0;z-index:400;background:rgba(0,0,0,.82);display:flex;align-items:center;justify-content:center;padding:14px;box-sizing:border-box}
+    #scan-overlay{position:fixed;inset:0;z-index:400;background:rgba(0,0,0,.82);display:flex;align-items:center;justify-content:center;padding:max(10px,env(safe-area-inset-top)) 10px max(10px,env(safe-area-inset-bottom));box-sizing:border-box}
     #scan-overlay.hidden{display:none}
-    .scan-box{width:100%;max-width:480px;background:#fff;border-radius:18px;overflow:hidden;display:flex;flex-direction:column}
-    .scan-head{display:flex;align-items:center;justify-content:space-between;padding:12px 14px;background:#2F5233;color:#fff;font-weight:700;font-size:15px}
-    .scan-head button{background:rgba(255,255,255,.18);border:none;color:#fff;width:30px;height:30px;border-radius:50%;font-size:15px;cursor:pointer}
-    .scan-video-wrap{position:relative;background:#000;aspect-ratio:4/3}
-    .scan-video-wrap video{width:100%;height:100%;object-fit:cover;display:block}
+    .scan-box{width:100%;max-width:480px;background:#fff;border-radius:18px;overflow:hidden;display:flex;flex-direction:column;max-height:calc(100vh - 20px);max-height:calc(100dvh - 20px)}
+    .scan-head{flex-shrink:0;display:flex;align-items:center;justify-content:space-between;padding:8px 8px 8px 14px;background:#2F5233;color:#fff;font-weight:700;font-size:15px}
+    .scan-head button{background:rgba(255,255,255,.22);border:none;color:#fff;width:40px;height:40px;border-radius:50%;font-size:18px;cursor:pointer;flex-shrink:0}
+    .scan-video-wrap{position:relative;background:#000;width:100%;flex:1 1 auto;min-height:120px;height:clamp(150px,34vh,330px);height:clamp(150px,34dvh,330px);overflow:hidden}
+    .scan-video-wrap video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block}
     .scan-frame{position:absolute;left:10%;right:10%;top:30%;bottom:30%;border:3px solid rgba(255,255,255,.9);border-radius:12px;box-shadow:0 0 0 9999px rgba(0,0,0,.28);pointer-events:none}
-    .scan-status{padding:10px 14px;font-size:14px;min-height:20px;color:#332f26;line-height:1.4}
-    .scan-qty{display:flex;align-items:center;gap:8px;padding:0 14px 10px}
+    .scan-status{flex-shrink:0;padding:8px 14px;font-size:14px;min-height:20px;color:#332f26;line-height:1.4}
+    .scan-qty{flex-shrink:0;display:flex;align-items:center;gap:8px;padding:0 14px 10px}
     .scan-qty.hidden{display:none}
     .scan-qty span{flex:1;font-size:13.5px;font-weight:600;color:#4a453a;line-height:1.3}
     .scan-qty button{width:40px;height:40px;border-radius:10px;border:1.4px solid #d8d2c2;background:#fff;font-size:22px;font-weight:700;color:#2F5233;cursor:pointer;font-family:inherit}
     .scan-qty input{width:68px;box-sizing:border-box;text-align:center;padding:8px 4px;border:1.4px solid #d8d2c2;border-radius:10px;font-size:18px;font-weight:700;font-family:inherit}
-    .scan-manual{display:flex;gap:8px;padding:0 14px 14px}
+    .scan-manual{flex-shrink:0;display:flex;gap:8px;padding:0 14px 10px}
+    .scan-done{flex-shrink:0;margin:0 14px 14px;padding:12px;border:1.4px solid #d8d2c2;border-radius:10px;background:#f4f1e8;color:#332f26;font-family:inherit;font-weight:700;font-size:15px;cursor:pointer}
     .scan-manual input{flex:1;min-width:0;padding:10px 12px;border:1.4px solid #d8d2c2;border-radius:10px;font-size:16px;font-family:inherit}
     .scan-manual button{padding:0 16px;border:none;border-radius:10px;background:#2F5233;color:#fff;font-family:inherit;font-weight:700;font-size:14px;cursor:pointer}
   `;
@@ -420,9 +421,12 @@ function scanBeep() {
         <input type="text" id="scan-manual" inputmode="numeric" autocomplete="off" placeholder="หรือพิมพ์เลขบาร์โค้ดเอง">
         <button type="button" id="scan-manual-ok">ตกลง</button>
       </div>
+      <button type="button" class="scan-done" id="scan-done">ปิดหน้าสแกน</button>
     </div>`;
   document.body.appendChild(el);
   document.getElementById("scan-close").addEventListener("click", () => closeScanner());
+  document.getElementById("scan-done").addEventListener("click", () => closeScanner());
+  el.addEventListener("click", (e) => { if (e.target === el) closeScanner(); }); // แตะพื้นที่มืดนอกกล่อง = ปิด
   const qtyInp = document.getElementById("scan-qty");
   const bump = (d) => { const n = Math.floor(Number(qtyInp.value)) || 1; qtyInp.value = String(Math.min(999, Math.max(1, n + d))); };
   document.getElementById("scan-qty-minus").addEventListener("click", () => bump(-1));
