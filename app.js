@@ -272,7 +272,7 @@ function goToView(name) {
   if (name === "dashboard") loadDashboard();
   if (name === "products") renderProductsList();
   if (name === "stockcut") { /* selects already filled via fillProductSelects */ }
-  if (name === "codes") loadCodes();
+  if (name === "codes") { loadCodes(); checkOtherCodeLinks(); }
   if (name === "menus") loadMenusAdmin();
   if (name === "today") loadTodayBackoffice();
   if (name === "summary") loadSummary();
@@ -919,6 +919,8 @@ document.getElementById("form-receive").addEventListener("submit", async (e) => 
   });
   if (res.ok) {
     toast(`รับเข้าล็อตใหม่ของ "${res.name}" แล้ว (คงเหลือ ${res.newStock} ${res.unit})`);
+    showOtherLinkResult(res.link);
+    if (res.auto && res.auto.warning) setTimeout(() => toast(res.auto.warning, true), 2800);
     closeModal("modal-receive");
     refreshProducts(); refreshLowStock();
   } else toast(res.error || "รับเข้าไม่สำเร็จ", true);
@@ -1065,6 +1067,7 @@ document.getElementById("form-add-product").addEventListener("submit", async (e)
     } else toast("เพิ่มสินค้า + รับเข้าเรียบร้อย");
     // ถ้าสร้าง Code/เมนูไม่ครบ ให้แจ้งเหตุผลแยกอีกอัน (ไม่ทับข้อความด้านบน)
     if (res.auto && res.auto.warning) setTimeout(() => toast(res.auto.warning, true), 2800);
+    showOtherLinkResult(res.link);
     e.target.reset();
     npLastBarcode = "";
     document.getElementById("np-costperunit").value = "";
@@ -1351,7 +1354,8 @@ document.getElementById("form-add-code").addEventListener("submit", async (e) =>
     e.target.reset();
     closeModal("modal-code");
     loadCodes();
-  } else toast(res.error || "บันทึก Code ไม่สำเร็จ", true);
+  } else if (res.linkIssue) showAlertPopup("ชื่อ Code ไม่ตรงกับชื่อสินค้า", [res.error]);
+  else toast(res.error || "บันทึก Code ไม่สำเร็จ", true);
 });
 
 // ============================================================
@@ -2091,7 +2095,7 @@ document.getElementById("btn-confirm-sale-summary").addEventListener("click", as
   const payloadItems = items.map((p) => {
     // เมนูผลไม้สดชั่งกิโลไม่หักบรรจุภัณฑ์ (ไม่ใช้ Code แม้ในชีตจะยังเหลือค่าเก่าอยู่)
     const code = isWeighedMenu(p.menu) ? null : state.codes.find((c) => c.id === p.menu.codeId);
-    const packaging = code ? code.packaging.map((x) => ({ productId: x.productId, qty: x.qty })) : [];
+    const packaging = code ? code.packaging.map((x) => ({ productId: x.productId, qty: x.qty, name: x.name || "" })) : [];
     return {
       // สินค้าชั่งกิโล: ต่อหน่วยท้ายชื่อ เช่น "แอปเปิ้ล ฟูจิ (ลูก)" จะได้แยกในสรุป/สถิติ ไม่เอากิโลไปรวมกับลูก
       itemName: p.menu.displayName + (p.unit ? ` (${p.unit})` : ""),
@@ -2105,6 +2109,8 @@ document.getElementById("btn-confirm-sale-summary").addEventListener("click", as
 
   const lowStockAll = new Set();
   const saved = new Set();
+  const linkMsgs = [];   // ข้อความจากสินค้าหมวดอื่นๆ ที่ผูก Code ไม่ได้ (ชื่อไม่ตรง/ไม่มี/ของหมดไม่มีล็อตใหม่) -> popup
+  let healedAny = false; // เซิร์ฟเวอร์ย้าย Code ไปผูกล็อต/สินค้าชื่อเดียวกันตัวใหม่ให้แล้ว -> โหลด Code ใหม่
   try {
     const res = await apiPost("stockOutBatch", {
       channel: state.salesChannel,
@@ -2117,6 +2123,7 @@ document.getElementById("btn-confirm-sale-summary").addEventListener("click", as
       const msg = (res && res.error) || "บันทึกไม่สำเร็จ";
       items.forEach((p) => { p.error = msg; });
     } else {
+      healedAny = !!res.healed;
       res.results.forEach((r) => {
         const p = items[r.index];
         if (!p) return;
@@ -2125,6 +2132,7 @@ document.getElementById("btn-confirm-sale-summary").addEventListener("click", as
           (r.lowStock || []).forEach((x) => lowStockAll.add(x));
         } else {
           p.error = r.error || "บันทึกไม่สำเร็จ";
+          if (r.linkIssue) linkMsgs.push(r.error || "ผูก Code ไม่สำเร็จ");
         }
       });
     }
@@ -2132,6 +2140,9 @@ document.getElementById("btn-confirm-sale-summary").addEventListener("click", as
     // เน็ตหลุดกลางทาง: ไม่รู้ว่าเซิร์ฟเวอร์บันทึกไปหรือยัง ให้ตรวจที่หน้าสรุปยอดก่อนกดซ้ำ
     items.forEach((p) => { p.error = "เชื่อมต่อไม่สำเร็จ — ตรวจที่หน้าสรุปยอดก่อนกดซ้ำ กันบันทึกซ้ำ"; });
   }
+
+  if (healedAny) loadCodes();
+  if (linkMsgs.length) showAlertPopup("ผูก Code กับสินค้าไม่ได้", Array.from(new Set(linkMsgs)));
 
   state.cart = state.cart.filter((p) => !saved.has(p));
   state.cartSaving = false;
@@ -3807,3 +3818,163 @@ async function openFruits() {
     if (r.ok) openFruits(); else toast(r.error || "เพิ่มไม่สำเร็จ", true);
   };
 }
+
+
+// ============================================================
+// Popup แจ้งเตือนกลาง (ใช้แจ้งเมื่อ Code หมวดอื่นๆ ผูกกับสินค้าไม่ได้ ฯลฯ)
+// ============================================================
+function showAlertPopup(title, lines, okText) {
+  const old = document.getElementById("app-alert-popup");
+  if (old) old.remove();
+  const back = document.createElement("div");
+  back.className = "modal-backdrop"; back.id = "app-alert-popup"; back.style.zIndex = "9999";
+  const sheet = document.createElement("div"); sheet.className = "modal-sheet";
+  const close = document.createElement("button"); close.type = "button"; close.className = "modal-close"; close.textContent = "✕";
+  const h = document.createElement("h3"); h.textContent = "⚠️ " + title;
+  const body = document.createElement("div");
+  body.style.cssText = "display:flex;flex-direction:column;gap:8px;margin:8px 0 14px;font-size:14.5px;line-height:1.5";
+  (Array.isArray(lines) ? lines : [lines]).forEach(t => {
+    const p = document.createElement("div");
+    p.style.cssText = "background:#fff3e6;border-left:4px solid #e48a4a;border-radius:8px;padding:9px 12px;overflow-wrap:anywhere";
+    p.textContent = t;
+    body.appendChild(p);
+  });
+  const ok = document.createElement("button"); ok.type = "button"; ok.className = "btn mango"; ok.style.width = "100%"; ok.textContent = okText || "รับทราบ";
+  const done = () => back.remove();
+  close.onclick = done; ok.onclick = done;
+  back.addEventListener("click", (e) => { if (e.target === back) done(); });
+  sheet.append(close, h, body, ok);
+  back.appendChild(sheet);
+  document.body.appendChild(back);
+}
+
+// ผลตรวจการผูก Code ของสินค้าหมวดอื่นๆ จากเซิร์ฟเวอร์: { issues:[], relinked:[] }
+function showOtherLinkResult(link) {
+  if (!link) return;
+  if (link.issues && link.issues.length) showAlertPopup("Code ของสินค้าหมวดอื่นๆ ยังผูกไม่ตรง", link.issues);
+  else if (link.relinked && link.relinked.length) setTimeout(() => toast("ผูก Code ต่อให้อัตโนมัติแล้ว: " + link.relinked[0]), 2800);
+}
+
+// เปิดหน้า "จัดการ Code": ให้เซิร์ฟเวอร์เช็คว่าสินค้าหมวดอื่นๆ ทุกตัวมี Code ชื่อตรงกัน ผูกต่อล็อตใหม่ให้ที่ทำได้ แล้วแจ้งที่เหลือ
+let otherLinkChecking = false;
+async function checkOtherCodeLinks() {
+  if (otherLinkChecking || !state.employee || state.employee.role !== "admin") return;
+  otherLinkChecking = true;
+  try {
+    const res = await apiPost("checkOtherLinks", {});
+    if (res && res.ok) {
+      if (res.relinked && res.relinked.length) { toast("ผูก Code ต่อให้อัตโนมัติแล้ว " + res.relinked.length + " รายการ"); loadCodes(); }
+      if (res.issues && res.issues.length) showAlertPopup("Code ของสินค้าหมวดอื่นๆ ยังผูกไม่ตรง", res.issues);
+    }
+  } catch (err) { /* เงียบไว้ — เป็นแค่การตรวจเสริม */ }
+  otherLinkChecking = false;
+}
+
+// ============================================================
+// ช่องค้นหากลาง — หน้าตาเดียวกับหน้า "ดูคงเหลือ" (ช่อง 🔍 + กรองทันทีไม่ยิง API ซ้ำ)
+// ใช้ MutationObserver: ลิสต์ถูกวาดใหม่เมื่อไหร่ก็กรองซ้ำด้วยคำค้นเดิมให้เอง
+// ============================================================
+function installListSearch(cfg) {
+  const wrap = document.getElementById(cfg.id);
+  if (!wrap || wrap.dataset.searchInstalled) return;
+  wrap.dataset.searchInstalled = "1";
+
+  const box = document.createElement("div");
+  box.className = "field list-search-box";
+  box.style.cssText = cfg.boxStyle || "margin-bottom:8px";
+  const inp = document.createElement("input");
+  inp.type = "search"; inp.autocomplete = "off";
+  inp.placeholder = cfg.placeholder || "🔍 ค้นหาชื่อ…";
+  box.appendChild(inp);
+  const anchor = cfg.before ? (typeof cfg.before === "string" ? document.querySelector(cfg.before) : cfg.before) : wrap;
+  (anchor || wrap).parentNode.insertBefore(box, anchor || wrap);
+
+  const none = document.createElement("div");
+  none.className = "empty-state hidden";
+  none.textContent = "ไม่พบรายการที่ค้นหา";
+  wrap.parentNode.insertBefore(none, wrap); // ข้อความ "ไม่พบ" อยู่ใต้ช่องค้นหาเสมอ (กันตกจอในหน้าขายที่กริดสูงเต็มจอ)
+
+  const sel = cfg.heading ? cfg.item + "," + cfg.heading : cfg.item;
+  const apply = () => {
+    const q = normProductName(inp.value);
+    let shown = 0, total = 0, lastHead = null, headHas = false;
+    wrap.querySelectorAll(sel).forEach(n => {
+      if (cfg.heading && n.matches(cfg.heading)) {
+        if (lastHead) lastHead.style.display = (!q || headHas) ? "" : "none";
+        lastHead = n; headHas = false;
+        return;
+      }
+      total++;
+      const txt = normProductName(n.textContent + " " + (cfg.extra ? cfg.extra(n) : ""));
+      const ok = !q || txt.includes(q);
+      n.style.display = ok ? "" : "none";
+      if (ok) { shown++; headHas = true; }
+    });
+    if (lastHead) lastHead.style.display = (!q || headHas) ? "" : "none";
+    none.classList.toggle("hidden", !(q && total && !shown));
+  };
+
+  let t, raf = 0;
+  inp.addEventListener("input", () => { clearTimeout(t); t = setTimeout(apply, 150); });
+  new MutationObserver(() => { cancelAnimationFrame(raf); raf = requestAnimationFrame(apply); })
+    .observe(wrap, { childList: true, subtree: !!cfg.deep });
+  return inp;
+}
+
+// ช่องค้นหาสำหรับ <select> (เช่น เลือกสินค้าในหน้าของเสีย) — กรองตัวเลือกตามคำค้น
+function installSelectSearch(selId, placeholder) {
+  const sel = document.getElementById(selId);
+  if (!sel || sel.dataset.searchInstalled) return;
+  sel.dataset.searchInstalled = "1";
+  const inp = document.createElement("input");
+  inp.type = "search"; inp.autocomplete = "off";
+  inp.placeholder = placeholder || "🔍 ค้นหาชื่อ…";
+  inp.style.marginBottom = "8px";
+  sel.parentNode.insertBefore(inp, sel);
+
+  let all = Array.from(sel.options), internal = false;
+  const mo = new MutationObserver(() => { if (internal) return; all = Array.from(sel.options); if (inp.value) filter(); });
+  mo.observe(sel, { childList: true });
+
+  function filter() {
+    const q = normProductName(inp.value);
+    const cur = sel.value;
+    internal = true;
+    sel.innerHTML = "";
+    const list = q ? all.filter(o => o.value && normProductName(o.textContent).includes(q)) : all;
+    if (!list.length) {
+      const o = document.createElement("option"); o.value = ""; o.textContent = "— ไม่พบสินค้าที่ค้นหา —"; sel.appendChild(o);
+    } else list.forEach(o => sel.appendChild(o));
+    if (cur && list.some(o => o.value === cur)) sel.value = cur;
+    mo.takeRecords();
+    internal = false;
+    sel.dispatchEvent(new Event("change", { bubbles: true }));
+  }
+  let t;
+  inp.addEventListener("input", () => { clearTimeout(t); t = setTimeout(filter, 150); });
+}
+
+(function installAllSearchBoxes() {
+  const listRow = ".list-row";
+  // หลังบ้าน
+  installListSearch({ id: "today-body", item: listRow, deep: true, placeholder: "🔍 ค้นหาในรายการวันนี้…" });
+  installListSearch({ id: "lowstock-all-list", item: listRow, placeholder: "🔍 ค้นหาสินค้าใกล้หมด…" });
+  installListSearch({ id: "cut-list", item: ".cut-row", before: document.querySelector("#form-stockcut .cut-head"), placeholder: "🔍 ค้นหาวัตถุดิบ…" });
+  installListSearch({ id: "codes-list", item: listRow, placeholder: "🔍 ค้นหา Code / บรรจุภัณฑ์ที่ผูก…" });
+  installListSearch({ id: "menus-list", item: ".mm-row", heading: ".sm-cat-heading", placeholder: "🔍 ค้นหาเมนู / บาร์โค้ด…" });
+  installSelectSearch("waste-product", "🔍 ค้นหาสินค้าที่เสีย…");
+  installListSearch({ id: "sum-stockout-list", item: listRow, before: "#sum-channel-filter", placeholder: "🔍 ค้นหารายการขาย…" });
+  installListSearch({ id: "sum-stockcut-list", item: listRow, placeholder: "🔍 ค้นหารายการตัดสต๊อก…" });
+  installListSearch({ id: "sum-waste-list", item: listRow, placeholder: "🔍 ค้นหารายการของเสีย…" });
+  installListSearch({ id: "sum-cost-list", item: listRow, placeholder: "🔍 ค้นหาค่าใช้จ่าย…" });
+  installListSearch({ id: "stats-list", item: listRow, placeholder: "🔍 ค้นหารายการขายดี…" });
+  installListSearch({ id: "employees-list", item: listRow, placeholder: "🔍 ค้นหาพนักงาน…" });
+  installListSearch({ id: "code-packaging-list", item: listRow, placeholder: "🔍 ค้นหาบรรจุภัณฑ์ / สินค้า…" });
+  // โหมดขาย (หน้าพนักงาน)
+  installListSearch({
+    id: "sm-menu-grid", item: ".sm-tile", heading: ".sm-cat-heading", placeholder: "🔍 ค้นหาเมนู / บาร์โค้ด…",
+    boxStyle: "margin:0;padding:8px 16px;background:#fff;border-bottom:1px solid #e7e2d6;flex-shrink:0",
+    extra: n => { const m = (state.salesMenus || []).find(x => x.id === n.dataset.menuId); return m ? (m.barcode || "") : ""; },
+  });
+  installListSearch({ id: "today-sales-body", item: listRow, deep: true, placeholder: "🔍 ค้นหารายการขายวันนี้…" });
+})();
